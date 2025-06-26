@@ -17,8 +17,6 @@ import com.badlogic.gdx.utils.ObjectMap;
 
 /** {@link com.badlogic.gdx.ApplicationListener} implementation shared by all platforms. */
 public class Main extends ApplicationAdapter {
-    private PerspectiveCamera camera;
-    private VoxelCameraController cameraController;
     private ModelBatch modelBatch;
     private Environment environment;
 
@@ -27,35 +25,16 @@ public class Main extends ApplicationAdapter {
     private static final int WORLD_HEIGHT = 64;
     private static final int CHUNK_SIZE = 16;
     private static final int WATER_LEVEL = 32;
-    private static final int RENDER_DISTANCE = 8; // chunks
 
-    // Chunk management
-    private ObjectMap<String, Chunk> loadedChunks;
-    private Vector3 lastPlayerChunk;
-    private WorldGenerator worldGenerator;
-
-    // Block types
-    private enum BlockType {
-        AIR, STONE, DIRT, GRASS, SAND, WATER, COAL, IRON, GOLD, DIAMOND, CRYSTAL, OIL
-    }
+    // Game objects
+    private Player player;
+    private World world;
+    private UIRenderer uiRenderer;
 
     private Model[] blockModels;
 
     @Override
     public void create() {
-        // Initialize camera
-        camera = new PerspectiveCamera(67, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        camera.position.set(WORLD_SIZE / 2f, WORLD_HEIGHT + 20f, WORLD_SIZE / 2f);
-        camera.lookAt(WORLD_SIZE / 2f, WORLD_HEIGHT, WORLD_SIZE / 2f - 10);
-        camera.near = 0.1f;
-        camera.far = 500f;
-        camera.update();
-
-        // Initialize camera controller with mouse grabbing
-        cameraController = new VoxelCameraController(camera);
-        Gdx.input.setInputProcessor(cameraController);
-        Gdx.input.setCursorCatched(true);
-
         // Initialize rendering
         modelBatch = new ModelBatch();
 
@@ -64,12 +43,21 @@ public class Main extends ApplicationAdapter {
         environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.6f, 0.6f, 0.6f, 1f));
         environment.add(new DirectionalLight().set(0.8f, 0.8f, 0.8f, -1f, -0.8f, -0.2f));
 
-        // Initialize world system
-        loadedChunks = new ObjectMap<>();
-        lastPlayerChunk = new Vector3(-1, -1, -1);
-        worldGenerator = new WorldGenerator();
-
+        // Create block models
         createBlockModels();
+
+        // Initialize world
+        world = new World(blockModels);
+
+        // Initialize player
+        player = new Player(WORLD_SIZE / 2f, WORLD_HEIGHT + 10f, WORLD_SIZE / 2f);
+
+        // Create UI renderer
+        uiRenderer = new UIRenderer();
+
+        // Set input processor to player's camera
+        Gdx.input.setInputProcessor(new PlayerInputProcessor(player.getCamera()));
+        Gdx.input.setCursorCatched(true);
 
         System.out.println("Voxel world initialized. World size: " + WORLD_SIZE + "x" + WORLD_HEIGHT + "x" + WORLD_SIZE);
     }
@@ -127,95 +115,103 @@ public class Main extends ApplicationAdapter {
 
     @Override
     public void render() {
-        handleInput();
-        cameraController.update();
-        updateChunks();
+        float deltaTime = Gdx.graphics.getDeltaTime();
+
+        // Update game logic
+        player.update(deltaTime, world);
+        world.update(player.getPosition());
 
         // Clear screen
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
         Gdx.gl.glClearColor(0.5f, 0.8f, 1f, 1f);
 
-        // Render visible chunks
-        modelBatch.begin(camera);
-        for (Chunk chunk : loadedChunks.values()) {
-            if (chunk.isVisible(camera)) {
-                modelBatch.render(chunk.getInstances(), environment);
-            }
-        }
+        // Render world
+        modelBatch.begin(player.getCamera());
+        world.render(modelBatch, player.getCamera(), environment);
         modelBatch.end();
+
+        // Render UI
+        uiRenderer.render(player);
     }
 
-    private void updateChunks() {
-        // Get current player chunk position
-        int chunkX = (int) (camera.position.x / CHUNK_SIZE);
-        int chunkZ = (int) (camera.position.z / CHUNK_SIZE);
+    // Input processor for player's camera
+    private class PlayerInputProcessor implements InputProcessor {
+        private PerspectiveCamera camera;
+        private float mouseSensitivity = 0.3f;
 
-        Vector3 currentChunk = new Vector3(chunkX, 0, chunkZ);
-
-        // Only update if player moved to a different chunk
-        if (!currentChunk.equals(lastPlayerChunk)) {
-            lastPlayerChunk.set(currentChunk);
-
-            // Load new chunks in render distance
-            for (int x = chunkX - RENDER_DISTANCE; x <= chunkX + RENDER_DISTANCE; x++) {
-                for (int z = chunkZ - RENDER_DISTANCE; z <= chunkZ + RENDER_DISTANCE; z++) {
-                    String chunkKey = x + "," + z;
-                    if (!loadedChunks.containsKey(chunkKey)) {
-                        loadChunk(x, z);
-                    }
-                }
-            }
-
-            // Unload distant chunks
-            Array<String> chunksToRemove = new Array<>();
-            for (ObjectMap.Entry<String, Chunk> entry : loadedChunks.entries()) {
-                Chunk chunk = entry.value;
-                float distance = Vector3.dst(chunk.chunkX, 0, chunk.chunkZ, chunkX, 0, chunkZ);
-                if (distance > RENDER_DISTANCE + 2) {
-                    chunksToRemove.add(entry.key);
-                }
-            }
-
-            for (String key : chunksToRemove) {
-                Chunk chunk = loadedChunks.remove(key);
-                chunk.dispose();
-            }
-
-            System.out.println("Loaded chunks: " + loadedChunks.size + " | Player chunk: " + chunkX + "," + chunkZ);
+        public PlayerInputProcessor(PerspectiveCamera camera) {
+            this.camera = camera;
         }
-    }
 
-    private void loadChunk(int chunkX, int chunkZ) {
-        Chunk chunk = new Chunk(chunkX, chunkZ, worldGenerator, blockModels);
-        chunk.generate();
-        loadedChunks.put(chunkX + "," + chunkZ, chunk);
-    }
+        @Override
+        public boolean keyDown(int keycode) {
+            if (keycode == Input.Keys.ESCAPE) {
+                if (Gdx.input.isCursorCatched()) {
+                    Gdx.input.setCursorCatched(false);
+                } else {
+                    Gdx.app.exit();
+                }
+            }
 
-    private void handleInput() {
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ESCAPE)) {
+            if (keycode == Input.Keys.TAB) {
+                Gdx.input.setCursorCatched(!Gdx.input.isCursorCatched());
+            }
+
+            return false;
+        }
+
+        @Override
+        public boolean keyUp(int keycode) {
+            return false;
+        }
+
+        @Override
+        public boolean keyTyped(char character) {
+            return false;
+        }
+
+        @Override
+        public boolean touchDown(int screenX, int screenY, int pointer, int button) {
+            return false;
+        }
+
+        @Override
+        public boolean touchUp(int screenX, int screenY, int pointer, int button) {
+            return false;
+        }
+
+        @Override
+        public boolean touchDragged(int screenX, int screenY, int pointer) {
             if (Gdx.input.isCursorCatched()) {
-                Gdx.input.setCursorCatched(false);
-            } else {
-                Gdx.app.exit();
+                float deltaX = -Gdx.input.getDeltaX() * mouseSensitivity;
+                float deltaY = -Gdx.input.getDeltaY() * mouseSensitivity;
+
+                // Rotate camera
+                camera.rotate(camera.up, deltaX);
+                camera.rotate(new Vector3(camera.direction).crs(camera.up).nor(), deltaY);
+                camera.update();
             }
+            return true;
         }
 
-        if (Gdx.input.isKeyJustPressed(Input.Keys.TAB)) {
-            Gdx.input.setCursorCatched(!Gdx.input.isCursorCatched());
+        @Override
+        public boolean mouseMoved(int screenX, int screenY) {
+            if (Gdx.input.isCursorCatched()) {
+                float deltaX = -Gdx.input.getDeltaX() * mouseSensitivity;
+                float deltaY = -Gdx.input.getDeltaY() * mouseSensitivity;
+
+                // Rotate camera
+                camera.rotate(camera.up, deltaX);
+                camera.rotate(new Vector3(camera.direction).crs(camera.up).nor(), deltaY);
+                camera.update();
+            }
+            return true;
         }
 
-        // Regenerate current chunk
-        if (Gdx.input.isKeyJustPressed(Input.Keys.R)) {
-            int chunkX = (int) (camera.position.x / CHUNK_SIZE);
-            int chunkZ = (int) (camera.position.z / CHUNK_SIZE);
-            String chunkKey = chunkX + "," + chunkZ;
-
-            Chunk oldChunk = loadedChunks.remove(chunkKey);
-            if (oldChunk != null) {
-                oldChunk.dispose();
-            }
-            loadChunk(chunkX, chunkZ);
+        @Override
+        public boolean scrolled(float amountX, float amountY) {
+            return false;
         }
     }
 
@@ -236,9 +232,7 @@ public class Main extends ApplicationAdapter {
                 }
             }
         }
-        for (Chunk chunk : loadedChunks.values()) {
-            chunk.dispose();
-        }
-        loadedChunks.clear();
+        world.dispose();
+        uiRenderer.dispose();
     }
 }
