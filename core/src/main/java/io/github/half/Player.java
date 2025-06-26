@@ -107,6 +107,12 @@ public class Player {
             toggleViewMode();
         }
 
+        // Toggle gravity mode
+        if (Gdx.input.isKeyJustPressed(Input.Keys.G)) {
+            GameSettings.getInstance().togglePlayerGravity();
+            GameSettings.getInstance().saveSettings();
+        }
+
         // Jumping
         if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
             if (onGround) {
@@ -141,12 +147,17 @@ public class Player {
         // Check if in water
         isSwimming = position.y < WATER_LEVEL;
 
-        // Apply acceleration (gravity)
-        if (isSwimming) {
-            // Buoyancy - reduced gravity in water
-            acceleration.y = GRAVITY * 0.3f;
+        // Apply acceleration (gravity) if enabled
+        if (GameSettings.getInstance().isPlayerGravityEnabled()) {
+            if (isSwimming) {
+                // Buoyancy - reduced gravity in water
+                acceleration.y = GRAVITY * 0.3f;
+            } else {
+                acceleration.y = GRAVITY;
+            }
         } else {
-            acceleration.y = GRAVITY;
+            // No gravity when disabled
+            acceleration.y = 0;
         }
 
         // Apply acceleration to velocity

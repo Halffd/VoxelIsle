@@ -4,10 +4,9 @@ import com.badlogic.gdx.graphics.Camera;
 import com.badlogic.gdx.graphics.g3d.Environment;
 import com.badlogic.gdx.graphics.g3d.Model;
 import com.badlogic.gdx.graphics.g3d.ModelBatch;
-import com.badlogic.gdx.math.Intersector;
+import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
-import com.badlogic.gdx.math.collision.BoundingBox;
 import com.badlogic.gdx.math.collision.Ray;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ObjectMap;
@@ -15,69 +14,46 @@ import com.badlogic.gdx.utils.ObjectMap;
 public class World {
     private static final int CHUNK_SIZE = 16;
     private static final int WORLD_HEIGHT = 64;
-    private static final int RENDER_DISTANCE = 8;
 
-    private ObjectMap<String, Chunk> loadedChunks;
-    private Vector3 lastPlayerChunk;
+    private ChunkManager chunkManager;
     private WorldGenerator worldGenerator;
     private Model[] blockModels;
 
     public World(Model[] blockModels) {
         this.blockModels = blockModels;
-        this.loadedChunks = new ObjectMap<>();
-        this.lastPlayerChunk = new Vector3(-1, -1, -1);
         this.worldGenerator = new WorldGenerator();
+        this.chunkManager = new ChunkManager(blockModels);
     }
 
     public void update(Vector3 playerPosition) {
-        int chunkX = MathUtils.floor(playerPosition.x / CHUNK_SIZE);
-        int chunkZ = MathUtils.floor(playerPosition.z / CHUNK_SIZE);
-
-        Vector3 currentChunk = new Vector3(chunkX, 0, chunkZ);
-
-        // Only update if player moved to a different chunk
-        if (!currentChunk.equals(lastPlayerChunk)) {
-            lastPlayerChunk.set(currentChunk);
-
-            // Load new chunks in render distance
-            for (int x = chunkX - RENDER_DISTANCE; x <= chunkX + RENDER_DISTANCE; x++) {
-                for (int z = chunkZ - RENDER_DISTANCE; z <= chunkZ + RENDER_DISTANCE; z++) {
-                    String chunkKey = x + "," + z;
-                    if (!loadedChunks.containsKey(chunkKey)) {
-                        loadChunk(x, z);
-                    }
-                }
-            }
-
-            // Unload distant chunks
-            Array<String> chunksToRemove = new Array<>();
-            for (ObjectMap.Entry<String, Chunk> entry : loadedChunks.entries()) {
-                Chunk chunk = entry.value;
-                float distance = Vector3.dst(chunk.chunkX, 0, chunk.chunkZ, chunkX, 0, chunkZ);
-                if (distance > RENDER_DISTANCE + 2) {
-                    chunksToRemove.add(entry.key);
-                }
-            }
-
-            for (String key : chunksToRemove) {
-                Chunk chunk = loadedChunks.remove(key);
-                chunk.dispose();
-            }
-        }
+        // Update chunk loading through the chunk manager
+        chunkManager.update(playerPosition);
     }
 
     public void render(ModelBatch batch, Camera camera, Environment environment) {
+        ObjectMap<String, Chunk> loadedChunks = chunkManager.getLoadedChunks();
+        var loadedChunksSize = loadedChunks.size;
+        System.out.println("Loaded chunks: " + loadedChunks.size + " / " + loadedChunksSize + " Hash: " + loadedChunks.hashCode());
+
         for (Chunk chunk : loadedChunks.values()) {
-            if (chunk.isVisible(camera)) {
-                batch.render(chunk.getInstances(), environment);
+            try {
+                if (chunk.isVisible(camera)) {
+                    Array<ModelInstance> instances = chunk.getInstances();
+                    System.out.println("Instances: " + instances.size + " / " + chunk.getInstances().size + " Hash: " + chunk.getInstances().hashCode());
+                    if (instances != null && instances.size > 0) {
+                        batch.render(instances, environment);
+                    }
+                }
+            } catch (IndexOutOfBoundsException e) {
+                // Chunk has been disposed
+                System.out.println("Chunk disposed, Error: " + e);
+            } catch (NullPointerException e) {
+                // Chunk has been disposed
+                System.out.println("Null chunk disposed, Error: " + e);
+            } catch (Throwable e) {
+                System.out.println("Error rendering chunk: " + e);
             }
         }
-    }
-
-    private void loadChunk(int chunkX, int chunkZ) {
-        Chunk chunk = new Chunk(chunkX, chunkZ, worldGenerator, blockModels);
-        chunk.generate();
-        loadedChunks.put(chunkX + "," + chunkZ, chunk);
     }
 
     public BlockType getBlockAt(int x, int y, int z) {
@@ -89,6 +65,7 @@ public class World {
         int chunkZ = MathUtils.floor((float)z / CHUNK_SIZE);
         String chunkKey = chunkX + "," + chunkZ;
 
+        ObjectMap<String, Chunk> loadedChunks = chunkManager.getLoadedChunks();
         if (loadedChunks.containsKey(chunkKey)) {
             return loadedChunks.get(chunkKey).getBlockAt(x - chunkX * CHUNK_SIZE, y, z - chunkZ * CHUNK_SIZE);
         } else {
@@ -105,8 +82,21 @@ public class World {
         int chunkZ = MathUtils.floor((float)z / CHUNK_SIZE);
         String chunkKey = chunkX + "," + chunkZ;
 
+        ObjectMap<String, Chunk> loadedChunks = chunkManager.getLoadedChunks();
         if (loadedChunks.containsKey(chunkKey)) {
             loadedChunks.get(chunkKey).setBlockAt(x - chunkX * CHUNK_SIZE, y, z - chunkZ * CHUNK_SIZE, blockType);
+
+            // Queue mesh rebuild in chunk manager instead of rebuilding immediately
+            chunkManager.queueRebuildMesh(chunkX, chunkZ);
+
+            // Also check neighboring chunks if the block was on a chunk boundary
+            int localX = x - chunkX * CHUNK_SIZE;
+            int localZ = z - chunkZ * CHUNK_SIZE;
+
+            if (localX == 0) chunkManager.queueRebuildMesh(chunkX - 1, chunkZ);
+            if (localX == CHUNK_SIZE - 1) chunkManager.queueRebuildMesh(chunkX + 1, chunkZ);
+            if (localZ == 0) chunkManager.queueRebuildMesh(chunkX, chunkZ - 1);
+            if (localZ == CHUNK_SIZE - 1) chunkManager.queueRebuildMesh(chunkX, chunkZ + 1);
         }
     }
 
@@ -165,9 +155,6 @@ public class World {
     }
 
     public void dispose() {
-        for (Chunk chunk : loadedChunks.values()) {
-            chunk.dispose();
-        }
-        loadedChunks.clear();
+        chunkManager.dispose();
     }
 }

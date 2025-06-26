@@ -56,24 +56,48 @@ public class Chunk {
         generated = true;
     }
 
-    private void createMesh() {
+    // No createMesh(), adiciona contadores:
+    public void createMesh() {
         instances.clear();
+        int totalBlocks = 0;
+        int visibleBlocks = 0;
+        int addedInstances = 0;
+
+        System.out.println("Creating mesh for chunk (" + chunkX + ", " + chunkZ + ")");
 
         for (int x = 0; x < CHUNK_SIZE; x++) {
             for (int y = 0; y < WORLD_HEIGHT; y++) {
                 for (int z = 0; z < CHUNK_SIZE; z++) {
-                    BlockType blockType = blocks[x][y][z];
+                    try {
+                        BlockType blockType = blocks[x][y][z];
+                        totalBlocks++;
 
-                    if (blockType != BlockType.AIR && isBlockVisible(x, y, z)) {
-                        ModelInstance instance = new ModelInstance(blockModels[blockType.ordinal()]);
-                        float worldX = chunkX * CHUNK_SIZE + x;
-                        float worldZ = chunkZ * CHUNK_SIZE + z;
-                        instance.transform.setToTranslation(worldX, y, worldZ);
-                        instances.add(instance);
+                        if (blockType != null && blockType != BlockType.AIR) {
+                            if (isBlockVisible(x, y, z)) {
+                                visibleBlocks++;
+
+                                if (blockModels != null && blockType.ordinal() < blockModels.length
+                                    && blockModels[blockType.ordinal()] != null) {
+
+                                    ModelInstance instance = new ModelInstance(blockModels[blockType.ordinal()]);
+                                    float worldX = chunkX * CHUNK_SIZE + x;
+                                    float worldZ = chunkZ * CHUNK_SIZE + z;
+                                    instance.transform.setToTranslation(worldX, y, worldZ);
+                                    instances.add(instance);
+                                    addedInstances++;
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        System.out.println("Error at (" + x + "," + y + "," + z + "): " + e);
                     }
                 }
             }
         }
+
+        System.out.println("Chunk (" + chunkX + ", " + chunkZ + ") - Total: " + totalBlocks +
+            ", Visible: " + visibleBlocks + ", Instances: " + addedInstances);
+        needsRebuild = false;
     }
 
     private boolean isBlockVisible(int x, int y, int z) {
@@ -125,7 +149,7 @@ public class Chunk {
         }
         blocks[x][y][z] = blockType;
         needsRebuild = true;
-        createMesh(); // Rebuild mesh immediately
+        // Mesh rebuild will be queued by World class
     }
 
     public void update() {

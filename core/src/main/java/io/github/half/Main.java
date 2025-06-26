@@ -3,6 +3,7 @@ package io.github.half;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.InputProcessor;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.graphics.g3d.*;
@@ -35,6 +36,9 @@ public class Main extends ApplicationAdapter {
 
     @Override
     public void create() {
+        // Initialize game settings
+        GameSettings.getInstance();
+
         // Initialize rendering
         modelBatch = new ModelBatch();
 
@@ -56,7 +60,7 @@ public class Main extends ApplicationAdapter {
         uiRenderer = new UIRenderer();
 
         // Set input processor to player's camera
-        Gdx.input.setInputProcessor(new PlayerInputProcessor(player.getCamera()));
+        Gdx.input.setInputProcessor(new VoxelCameraController(player.getCamera()));
         Gdx.input.setCursorCatched(true);
 
         System.out.println("Voxel world initialized. World size: " + WORLD_SIZE + "x" + WORLD_HEIGHT + "x" + WORLD_SIZE);
@@ -113,9 +117,24 @@ public class Main extends ApplicationAdapter {
                 VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal);
     }
 
+    // Gravity toggle cooldown
+    private float gravityToggleCooldown = 0f;
+    private static final float GRAVITY_TOGGLE_COOLDOWN_TIME = 0.5f; // Half a second cooldown
+
     @Override
     public void render() {
         float deltaTime = Gdx.graphics.getDeltaTime();
+
+        // Update gravity toggle cooldown
+        if (gravityToggleCooldown > 0) {
+            gravityToggleCooldown -= deltaTime;
+        }
+
+        // Check for gravity toggle with cooldown
+        if (Gdx.input.isKeyJustPressed(Input.Keys.G) && gravityToggleCooldown <= 0) {
+            GameSettings.getInstance().togglePlayerGravity();
+            gravityToggleCooldown = GRAVITY_TOGGLE_COOLDOWN_TIME;
+        }
 
         // Update game logic
         player.update(deltaTime, world);
@@ -138,10 +157,13 @@ public class Main extends ApplicationAdapter {
     // Input processor for player's camera
     private class PlayerInputProcessor implements InputProcessor {
         private PerspectiveCamera camera;
-        private float mouseSensitivity = 0.3f;
 
         public PlayerInputProcessor(PerspectiveCamera camera) {
             this.camera = camera;
+        }
+
+        private float getMouseSensitivity() {
+            return GameSettings.getInstance().getMouseSensitivity();
         }
 
         @Override
@@ -154,8 +176,16 @@ public class Main extends ApplicationAdapter {
                 }
             }
 
-            if (keycode == Input.Keys.TAB) {
-                Gdx.input.setCursorCatched(!Gdx.input.isCursorCatched());
+            if (keycode == Input.Keys.TAB || keycode == Input.Keys.ENTER) {
+                boolean newCatchState = !Gdx.input.isCursorCatched();
+                Gdx.input.setCursorCatched(newCatchState);
+
+                // Center cursor when grabbing
+                if (newCatchState) {
+                    Gdx.input.setCursorPosition(
+                        Gdx.graphics.getWidth() / 2,
+                        Gdx.graphics.getHeight() / 2);
+                }
             }
 
             return false;
@@ -182,10 +212,15 @@ public class Main extends ApplicationAdapter {
         }
 
         @Override
+        public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
+            return false;
+        }
+
+        @Override
         public boolean touchDragged(int screenX, int screenY, int pointer) {
             if (Gdx.input.isCursorCatched()) {
-                float deltaX = -Gdx.input.getDeltaX() * mouseSensitivity;
-                float deltaY = -Gdx.input.getDeltaY() * mouseSensitivity;
+                float deltaX = -Gdx.input.getDeltaX() * getMouseSensitivity();
+                float deltaY = -Gdx.input.getDeltaY() * getMouseSensitivity();
 
                 // Rotate camera
                 camera.rotate(camera.up, deltaX);
@@ -198,8 +233,8 @@ public class Main extends ApplicationAdapter {
         @Override
         public boolean mouseMoved(int screenX, int screenY) {
             if (Gdx.input.isCursorCatched()) {
-                float deltaX = -Gdx.input.getDeltaX() * mouseSensitivity;
-                float deltaY = -Gdx.input.getDeltaY() * mouseSensitivity;
+                float deltaX = -Gdx.input.getDeltaX() * getMouseSensitivity();
+                float deltaY = -Gdx.input.getDeltaY() * getMouseSensitivity();
 
                 // Rotate camera
                 camera.rotate(camera.up, deltaX);
@@ -217,9 +252,9 @@ public class Main extends ApplicationAdapter {
 
     @Override
     public void resize(int width, int height) {
-        camera.viewportWidth = width;
-        camera.viewportHeight = height;
-        camera.update();
+        player.getCamera().viewportWidth = width;
+        player.getCamera().viewportHeight = height;
+        player.getCamera().update();
     }
 
     @Override

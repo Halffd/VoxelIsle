@@ -4,6 +4,8 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
@@ -49,7 +51,11 @@ public class UIRenderer {
         toolTextures = new TextureRegion[Tool.values().length];
 
         // Placeholder: use colored squares for now
-        Texture pixelTexture = new Texture(1, 1, Gdx.graphics.getFormat());
+        Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pixmap.setColor(Color.WHITE);
+        pixmap.fill();
+        Texture pixelTexture = new Texture(pixmap);
+        pixmap.dispose();
         TextureRegion whitePixel = new TextureRegion(pixelTexture);
 
         for (BlockType type : BlockType.values()) {
@@ -97,8 +103,8 @@ public class UIRenderer {
 
     private void drawHotbar(Player player) {
         // Draw hotbar at bottom center of screen
-        float startX = (viewport.getWorldWidth() - HOTBAR_WIDTH) / 2f;
-        float startY = 20f;
+        float startX = 0f; //(viewport.getWorldWidth() - HOTBAR_WIDTH) / 2f;
+        float startY = 30f;
 
         // Draw hotbar background
         shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
@@ -203,28 +209,88 @@ public class UIRenderer {
     }
 
     private void drawInventory(Player player) {
-        // Draw block counts in top right corner
-        float startX = viewport.getWorldWidth() - 150;
-        float startY = viewport.getWorldHeight() - 20;
+        // Center the UI in the bottom part of the screen
+        float startX = (viewport.getWorldWidth() - HOTBAR_WIDTH) / 2f;
+        float startY = HOTBAR_HEIGHT + 50; // Position above hotbar
 
+        // Draw game info panel in bottom center
         batch.begin();
 
-        // Draw current tool
+        // Create background panel for better readability
+        float panelWidth = 300;
+        float panelHeight = 80;
+        float panelX = startX + (HOTBAR_WIDTH - panelWidth) / 2f;
+
+        // Draw game settings status with centered alignment
         batch.setColor(1f, 1f, 1f, 1f);
-        font.draw(batch, "Tool: " + player.getCurrentTool().name(), startX, startY);
+
+        // Draw current settings in compact format
+        String statusText = "Gravity: " + (GameSettings.getInstance().isPlayerGravityEnabled() ? "ON" : "OFF") + " (G) | "
+                          + "Sensitivity: " + GameSettings.getInstance().getMouseSensitivity() + " | "
+                          + "Tool: " + player.getCurrentTool().name();
+
+        font.draw(batch, statusText, startX, startY, HOTBAR_WIDTH, Align.center, false);
         startY -= 20;
 
-        // Draw each block type and count
+        // Draw block inventory in a grid layout at bottom center
         ObjectIntMap<BlockType> blocks = player.getInventory().getAllBlocks();
+
+        // Panel background for inventory grid
+        shapeRenderer.setProjectionMatrix(camera.combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(0f, 0f, 0f, 0.4f);
+        shapeRenderer.rect(startX, startY - 110, HOTBAR_WIDTH, 100);
+        shapeRenderer.end();
+
+        // Grid settings
+        int cols = 4;
+        float cellWidth = HOTBAR_WIDTH / cols;
+        float cellHeight = 25;
+        float gridStartY = startY - 25;
+        int col = 0;
+        int row = 0;
+
+        // Draw each block type and count in a grid
         for (BlockType type : BlockType.values()) {
             if (type != BlockType.AIR && type != BlockType.WATER && blocks.containsKey(type)) {
                 int count = blocks.get(type, 0);
                 if (count > 0) {
                     batch.setColor(1f, 1f, 1f, 1f);
-                    font.draw(batch, type.name() + ": " + count, startX, startY);
-                    startY -= 20;
 
-                    if (startY < 100) break; // Prevent too many entries
+                    // Calculate grid position
+                    float itemX = startX + col * cellWidth + 5;
+                    float itemY = gridStartY - row * cellHeight;
+
+                    // Set color based on block type
+                    switch (type) {
+                        case STONE: batch.setColor(0.5f, 0.5f, 0.5f, 1f); break;
+                        case DIRT: batch.setColor(0.6f, 0.4f, 0.2f, 1f); break;
+                        case GRASS: batch.setColor(0.3f, 0.8f, 0.2f, 1f); break;
+                        case SAND: batch.setColor(0.9f, 0.8f, 0.4f, 1f); break;
+                        case COAL: batch.setColor(0.2f, 0.2f, 0.2f, 1f); break;
+                        case IRON: batch.setColor(0.7f, 0.5f, 0.3f, 1f); break;
+                        case GOLD: batch.setColor(1f, 0.8f, 0f, 1f); break;
+                        case DIAMOND: batch.setColor(0.6f, 0.9f, 1f, 1f); break;
+                        case CRYSTAL: batch.setColor(0.9f, 0.2f, 0.9f, 1f); break;
+                        case OIL: batch.setColor(0.1f, 0.1f, 0.1f, 1f); break;
+                        case WOOD: batch.setColor(0.6f, 0.3f, 0.1f, 1f); break;
+                        default: batch.setColor(1f, 1f, 1f, 1f);
+                    }
+
+                    // Draw block icon
+                    batch.draw(blockTextures[type.ordinal()], itemX, itemY - 15, 15, 15);
+
+                    // Draw text
+                    batch.setColor(1f, 1f, 1f, 1f);
+                    font.draw(batch, type.name() + ": " + count, itemX + 20, itemY);
+
+                    // Update grid position
+                    col++;
+                    if (col >= cols) {
+                        col = 0;
+                        row++;
+                        if (row >= 4) break; // Limit to 4 rows
+                    }
                 }
             }
         }

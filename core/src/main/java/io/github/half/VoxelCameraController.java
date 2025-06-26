@@ -15,8 +15,12 @@ public class VoxelCameraController implements InputProcessor {
     // Movement settings
     private float moveSpeed = 50f;
     private float sprintMultiplier = 2f;
-    private float mouseSensitivity = 0.5f;
     private float touchSensitivity = 0.3f;
+
+    // Get mouse sensitivity from settings
+    private float getMouseSensitivity() {
+        return GameSettings.getInstance().getMouseSensitivity();
+    }
 
     // Input state
     private boolean[] keys = new boolean[256];
@@ -131,8 +135,8 @@ public class VoxelCameraController implements InputProcessor {
             lastTouchY = screenY;
         } else if (Gdx.input.isCursorCatched()) {
             // Mouse look controls for PC
-            float deltaX = -Gdx.input.getDeltaX() * mouseSensitivity;
-            float deltaY = -Gdx.input.getDeltaY() * mouseSensitivity;
+            float deltaX = -Gdx.input.getDeltaX() * getMouseSensitivity();
+            float deltaY = -Gdx.input.getDeltaY() * getMouseSensitivity();
 
             camera.rotate(camera.up, deltaX);
             camera.rotate(tmp.set(camera.direction).crs(camera.up).nor(), deltaY);
@@ -143,8 +147,8 @@ public class VoxelCameraController implements InputProcessor {
     @Override
     public boolean mouseMoved(int screenX, int screenY) {
         if (Gdx.input.isCursorCatched()) {
-            float deltaX = -Gdx.input.getDeltaX() * mouseSensitivity;
-            float deltaY = -Gdx.input.getDeltaY() * mouseSensitivity;
+            float deltaX = -Gdx.input.getDeltaX() * getMouseSensitivity();
+            float deltaY = -Gdx.input.getDeltaY() * getMouseSensitivity();
 
             camera.rotate(camera.up, deltaX);
             camera.rotate(tmp.set(camera.direction).crs(camera.up).nor(), deltaY);
