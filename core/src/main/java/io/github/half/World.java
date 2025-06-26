@@ -32,45 +32,59 @@ public class World {
 
     public void render(ModelBatch batch, Camera camera, Environment environment) {
         ObjectMap<String, Chunk> loadedChunks = chunkManager.getLoadedChunks();
-        var loadedChunksSize = loadedChunks.size;
-        System.out.println("Loaded chunks: " + loadedChunks.size + " / " + loadedChunksSize + " Hash: " + loadedChunks.hashCode());
 
         for (Chunk chunk : loadedChunks.values()) {
             try {
-                if (chunk.isVisible(camera)) {
+                if (chunk != null && chunk.isVisible(camera) && chunk.isReady()) {
                     Array<ModelInstance> instances = chunk.getInstances();
-                    System.out.println("Instances: " + instances.size + " / " + chunk.getInstances().size + " Hash: " + chunk.getInstances().hashCode());
+
                     if (instances != null && instances.size > 0) {
-                        batch.render(instances, environment);
+                        // Validação extra para prevenir arrays corrompidos
+                        boolean hasValidInstances = true;
+                        for (ModelInstance instance : instances) {
+                            if (instance == null) {
+                                hasValidInstances = false;
+                                break;
+                            }
+                        }
+
+                        if (hasValidInstances) {
+                            batch.render(instances, environment);
+                        }
                     }
                 }
-            } catch (IndexOutOfBoundsException e) {
-                // Chunk has been disposed
-                System.out.println("Chunk disposed, Error: " + e);
-            } catch (NullPointerException e) {
-                // Chunk has been disposed
-                System.out.println("Null chunk disposed, Error: " + e);
-            } catch (Throwable e) {
-                System.out.println("Error rendering chunk: " + e);
+            } catch (Exception e) {
+                System.out.println("Skipping corrupted chunk: " + e.getMessage());
             }
         }
     }
+    // No World.java, adiciona esses métodos:
 
     public BlockType getBlockAt(int x, int y, int z) {
-        if (y < 0 || y >= WORLD_HEIGHT) {
-            return y < 0 ? BlockType.STONE : BlockType.AIR;
-        }
+        // Calculate which chunk this block belongs to
+        int chunkX = Math.floorDiv(x, 16); // CHUNK_SIZE = 16
+        int chunkZ = Math.floorDiv(z, 16);
 
-        int chunkX = MathUtils.floor((float)x / CHUNK_SIZE);
-        int chunkZ = MathUtils.floor((float)z / CHUNK_SIZE);
+        // Get the chunk
         String chunkKey = chunkX + "," + chunkZ;
-
         ObjectMap<String, Chunk> loadedChunks = chunkManager.getLoadedChunks();
+
         if (loadedChunks.containsKey(chunkKey)) {
-            return loadedChunks.get(chunkKey).getBlockAt(x - chunkX * CHUNK_SIZE, y, z - chunkZ * CHUNK_SIZE);
-        } else {
-            return worldGenerator.getBlockAt(x, y, z);
+            Chunk chunk = loadedChunks.get(chunkKey);
+
+            // Convert world coordinates to local chunk coordinates
+            int localX = x - (chunkX * 16);
+            int localZ = z - (chunkZ * 16);
+
+            return chunk.getBlockAt(localX, y, localZ);
         }
+
+        // If chunk not loaded, return AIR
+        return BlockType.AIR;
+    }
+    // E adiciona um método para saber quantos chunks estão carregados (usado no debug):
+    public int getLoadedChunksCount() {
+        return chunkManager.getLoadedChunks().size;
     }
 
     public void setBlockAt(int x, int y, int z, BlockType blockType) {

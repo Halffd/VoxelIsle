@@ -106,7 +106,14 @@ public class Player {
         if (Gdx.input.isKeyJustPressed(Input.Keys.V)) {
             toggleViewMode();
         }
+        if (Gdx.input.isCursorCatched()) {
+            float sensitivity = GameSettings.getInstance().getMouseSensitivity();
+            float deltaX = -Gdx.input.getDeltaX() * sensitivity;
+            float deltaY = -Gdx.input.getDeltaY() * sensitivity;
 
+            camera.rotate(camera.up, deltaX);
+            camera.rotate(new Vector3(camera.direction).crs(camera.up).nor(), deltaY);
+        }
         // Toggle gravity mode
         if (Gdx.input.isKeyJustPressed(Input.Keys.G)) {
             GameSettings.getInstance().togglePlayerGravity();

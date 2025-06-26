@@ -1,4 +1,3 @@
-
 package io.github.half;
 
 import com.badlogic.gdx.graphics.Camera;
@@ -15,11 +14,13 @@ public class Chunk {
 
     private BlockType[][][] blocks;
     private Array<ModelInstance> instances;
+    private Array<ModelInstance> renderInstances; // NOVO: Snapshot thread-safe para render
     private WorldGenerator worldGenerator;
     private Model[] blockModels;
     private BoundingBox boundingBox;
     private boolean generated = false;
     private boolean needsRebuild = false;
+    private boolean meshReady = false; // NOVO: Flag para saber se mesh está pronto
 
     public Chunk(int chunkX, int chunkZ, WorldGenerator worldGenerator, Model[] blockModels) {
         this.chunkX = chunkX;
@@ -28,6 +29,7 @@ public class Chunk {
         this.blockModels = blockModels;
         this.blocks = new BlockType[CHUNK_SIZE][WORLD_HEIGHT][CHUNK_SIZE];
         this.instances = new Array<>();
+        this.renderInstances = new Array<>(); // NOVO: Inicializa snapshot
 
         // Calculate bounding box
         float minX = chunkX * CHUNK_SIZE;
@@ -56,9 +58,10 @@ public class Chunk {
         generated = true;
     }
 
-    // No createMesh(), adiciona contadores:
+    // THREAD-SAFE createMesh
     public void createMesh() {
-        instances.clear();
+        // Cria array local para não interferir no rendering
+        Array<ModelInstance> newInstances = new Array<>();
         int totalBlocks = 0;
         int visibleBlocks = 0;
         int addedInstances = 0;
@@ -83,7 +86,7 @@ public class Chunk {
                                     float worldX = chunkX * CHUNK_SIZE + x;
                                     float worldZ = chunkZ * CHUNK_SIZE + z;
                                     instance.transform.setToTranslation(worldX, y, worldZ);
-                                    instances.add(instance);
+                                    newInstances.add(instance);
                                     addedInstances++;
                                 }
                             }
@@ -95,6 +98,18 @@ public class Chunk {
             }
         }
 
+        // ATOMIC SWAP - só uma operação thread-safe
+        synchronized (this) {
+            instances.clear();
+            instances.addAll(newInstances);
+
+            // Cria snapshot para rendering
+            renderInstances.clear();
+            renderInstances.addAll(newInstances);
+
+            meshReady = true;
+        }
+
         System.out.println("Chunk (" + chunkX + ", " + chunkZ + ") - Total: " + totalBlocks +
             ", Visible: " + visibleBlocks + ", Instances: " + addedInstances);
         needsRebuild = false;
@@ -103,8 +118,8 @@ public class Chunk {
     private boolean isBlockVisible(int x, int y, int z) {
         // Check if any adjacent face is exposed to air
         return isAir(x + 1, y, z) || isAir(x - 1, y, z) ||
-               isAir(x, y + 1, z) || isAir(x, y - 1, z) ||
-               isAir(x, y, z + 1) || isAir(x, y, z - 1);
+            isAir(x, y + 1, z) || isAir(x, y - 1, z) ||
+            isAir(x, y, z + 1) || isAir(x, y, z - 1);
     }
 
     private boolean isAir(int x, int y, int z) {
@@ -127,13 +142,24 @@ public class Chunk {
         return camera.frustum.boundsInFrustum(boundingBox);
     }
 
+    // THREAD-SAFE getInstances - retorna snapshot
     public Array<ModelInstance> getInstances() {
-        return instances;
+        synchronized (this) {
+            if (!meshReady) {
+                return new Array<>(); // Retorna array vazio se mesh não está pronto
+            }
+
+            // Retorna cópia do snapshot (extra safe)
+            return new Array<>(renderInstances);
+        }
     }
 
     public void dispose() {
-        // Models are shared, don't dispose them here
-        instances.clear();
+        synchronized (this) {
+            instances.clear();
+            renderInstances.clear();
+            meshReady = false;
+        }
     }
 
     public BlockType getBlockAt(int x, int y, int z) {
@@ -156,6 +182,13 @@ public class Chunk {
         if (needsRebuild) {
             createMesh();
             needsRebuild = false;
+        }
+    }
+
+    // NOVO: Método para verificar se chunk está pronto para render
+    public boolean isReady() {
+        synchronized (this) {
+            return meshReady && renderInstances.size > 0;
         }
     }
 }
