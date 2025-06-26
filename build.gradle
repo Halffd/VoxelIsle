@@ -69,5 +69,4 @@ subprojects {
     maven { url 'https://jitpack.io' }
   }
 }
-
 eclipse.project.name = 'VoxelIsle' + '-parent'
