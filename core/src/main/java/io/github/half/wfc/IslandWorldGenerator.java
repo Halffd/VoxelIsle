@@ -4,171 +4,277 @@ import java.util.*;
 import io.github.half.wfc.constraints.*;
 
 public class IslandWorldGenerator extends WorldGenerator {
-    private static final float ISLAND_FREQUENCY = 0.003f; // More islands
-    private static final float OCEAN_BIAS = 0.7f; // 70% ocean coverage
+    private static final float ISLAND_FREQUENCY = 0.003f;
+    private static final float OCEAN_BIAS = 0.7f;
     private static final float ISLAND_SIZE_VARIANCE = 2.5f;
+
+    // Safety limits
+    private static final int MAX_WFC_ATTEMPTS = 5;
+    private static final long MAX_WFC_TIME_MS = 10; // 10ms timeout per solve
+    private static final int MAX_CONSTRAINT_FAILURES = 100;
 
     private WFCSolver wfcSolver;
     private PerlinNoise islandNoise;
     private PerlinNoise islandShapeNoise;
     private PerlinNoise archipelagoNoise;
 
+    // Safety counters
+    private int constraintFailureCount = 0;
+    private boolean wfcEnabled = true;
+
     public IslandWorldGenerator() {
         super();
-        setupWFC();
-        setupIslandGeneration();
+        try {
+            setupWFC();
+            setupIslandGeneration();
+            System.out.println("IslandWorldGenerator initialized successfully");
+        } catch (Exception e) {
+            System.err.println("Failed to initialize WFC, falling back to traditional generation: " + e.getMessage());
+            wfcEnabled = false;
+        }
     }
 
     private void setupIslandGeneration() {
-        long seed = System.currentTimeMillis();
-        islandNoise = new PerlinNoise(seed * 12289);
-        islandShapeNoise = new PerlinNoise(seed * 37171);
-        archipelagoNoise = new PerlinNoise(seed * 65537);
+        try {
+            long seed = System.currentTimeMillis();
+            islandNoise = new PerlinNoise(seed * 12289);
+            islandShapeNoise = new PerlinNoise(seed * 37171);
+            archipelagoNoise = new PerlinNoise(seed * 65537);
+        } catch (Exception e) {
+            System.err.println("Failed to setup island noise, using default seed: " + e.getMessage());
+            islandNoise = new PerlinNoise(12345);
+            islandShapeNoise = new PerlinNoise(67890);
+            archipelagoNoise = new PerlinNoise(11111);
+        }
     }
 
     private void setupWFC() {
-        Set<Constraint> worldConstraints = new HashSet<>();
+        try {
+            Set<Constraint> worldConstraints = new HashSet<>();
 
-        // ISLAND-SPECIFIC CONSTRAINTS
+            // SIMPLIFIED CONSTRAINTS - less conflicts
 
-        // 1. Water level constraints - favor bigger oceans
-        worldConstraints.add(new HeightConstraint(BlockType.WATER, 0, 35));
-        worldConstraints.add(new HeightConstraint(BlockType.AIR, 32, 64));
+            // 1. Basic height constraints with overlap zones
+            worldConstraints.add(new HeightConstraint(BlockType.WATER, 0, 40)); // Extended range
+            worldConstraints.add(new HeightConstraint(BlockType.AIR, 25, 64));  // Overlap zone
 
-        // 2. Island formation rules
-        worldConstraints.add(new IslandFormationConstraint());
+            // 2. Simple adjacency rules
+            worldConstraints.add(new AdjacencyConstraint(BlockType.GRASS, Direction.DOWN,
+                BlockType.DIRT, BlockType.STONE, BlockType.SAND)); // More options
 
-        // 3. Beach/shore transitions
-        worldConstraints.add(new ShorelineConstraint());
+            // 3. Simplified proximity - more lenient
+            worldConstraints.add(new ProximityConstraint(BlockType.SAND, BlockType.WATER, 5)); // Larger range
 
-        // 4. Grass needs dirt underneath (classic rule)
-        worldConstraints.add(new AdjacencyConstraint(BlockType.GRASS, Direction.DOWN,
-            BlockType.DIRT, BlockType.STONE));
+            // 4. Basic ore distribution - only if we have stone
+            worldConstraints.add(new GeologicalConstraint(BlockType.IRON, BlockType.STONE, 0.3f)); // Lower threshold
 
-        // 5. Sand appears near water
-        worldConstraints.add(new ProximityConstraint(BlockType.SAND, BlockType.WATER, 3));
+            wfcSolver = new WFCSolver(worldConstraints, System.currentTimeMillis());
+            System.out.println("WFC setup complete with " + worldConstraints.size() + " constraints");
 
-        // 6. Cave systems in islands
-        worldConstraints.add(new ErosionConstraint(0.4f));
-
-        // 7. Ore distribution in island cores
-        worldConstraints.add(new GeologicalConstraint(BlockType.IRON, BlockType.STONE, 0.6f));
-        worldConstraints.add(new GeologicalConstraint(BlockType.GOLD, BlockType.STONE, 0.8f));
-        worldConstraints.add(new GeologicalConstraint(BlockType.DIAMOND, BlockType.STONE, 0.9f));
-
-        wfcSolver = new WFCSolver(worldConstraints, System.currentTimeMillis());
+        } catch (Exception e) {
+            System.err.println("WFC setup failed: " + e.getMessage());
+            wfcEnabled = false;
+        }
     }
 
     @Override
     public BlockType getBlockAt(int worldX, int worldY, int worldZ) {
-        // Use WFC for surface and near-surface generation
-        if (worldY >= 25) {
-            return getWFCBlockAt(worldX, worldY, worldZ);
-        } else {
-            // Use traditional generation for deep underground
-            return super.getBlockAt(worldX, worldY, worldZ);
+        // Null safety check
+        if (worldX < 0 || worldY < 0 || worldZ < 0 || worldY >= 64) {
+            return BlockType.AIR;
+        }
+
+        try {
+            // Use WFC for surface and near-surface generation IF enabled and not too many failures
+            if (wfcEnabled && constraintFailureCount < MAX_CONSTRAINT_FAILURES && worldY >= 25) {
+                BlockType wfcResult = getWFCBlockAt(worldX, worldY, worldZ);
+                if (wfcResult != null) {
+                    return wfcResult;
+                } else {
+                    constraintFailureCount++;
+                    if (constraintFailureCount >= MAX_CONSTRAINT_FAILURES) {
+                        System.err.println("Too many WFC failures, disabling WFC");
+                        wfcEnabled = false;
+                    }
+                }
+            }
+
+            // Fallback to traditional generation
+            return getTraditionalBlockAt(worldX, worldY, worldZ);
+
+        } catch (Exception e) {
+            System.err.println("Error generating block at (" + worldX + "," + worldY + "," + worldZ + "): " + e.getMessage());
+            // Ultimate fallback
+            return getBasicBlockAt(worldX, worldY, worldZ);
         }
     }
 
     private BlockType getWFCBlockAt(int worldX, int worldY, int worldZ) {
-        // Check if this is an island area
-        float islandValue = getIslandValue(worldX, worldZ);
+        try {
+            // Check if this is an island area
+            float islandValue = getIslandValue(worldX, worldZ);
 
-        if (islandValue > OCEAN_BIAS) {
-            // Island area - use WFC with island constraints
-            return solveForPosition(worldX, worldY, worldZ, true);
-        } else {
-            // Ocean area
-            if (worldY <= 32) {
-                return BlockType.WATER;
+            if (islandValue > OCEAN_BIAS) {
+                // Island area - try WFC with timeout
+                return solveForPositionSafe(worldX, worldY, worldZ, true);
             } else {
-                return BlockType.AIR;
+                // Ocean area - simple logic
+                return worldY <= 32 ? BlockType.WATER : BlockType.AIR;
             }
+        } catch (Exception e) {
+            System.err.println("WFC block generation failed: " + e.getMessage());
+            return null; // Trigger fallback
+        }
+    }
+
+    private BlockType solveForPositionSafe(int x, int y, int z, boolean isIsland) {
+        try {
+            // Time-limited WFC solving
+            long startTime = System.currentTimeMillis();
+
+            for (int attempt = 0; attempt < MAX_WFC_ATTEMPTS; attempt++) {
+                // Check timeout
+                if (System.currentTimeMillis() - startTime > MAX_WFC_TIME_MS) {
+                    System.err.println("WFC timeout at (" + x + "," + y + "," + z + ")");
+                    break;
+                }
+
+                try {
+                    // Create a mini WFC problem
+                    Set<Position> localPositions = new HashSet<>();
+                    Position center = new Position(x, y, z);
+
+                    // Smaller neighborhood to reduce complexity
+                    for (int dx = -1; dx <= 1; dx++) {
+                        for (int dy = 0; dy <= 1; dy++) { // Reduced Y range
+                            for (int dz = -1; dz <= 1; dz++) {
+                                localPositions.add(new Position(x + dx, y + dy, z + dz));
+                            }
+                        }
+                    }
+
+                    // Create local context with null safety
+                    LocalWorldContext localContext = new LocalWorldContext(x, y, z, isIsland);
+                    if (localContext == null) {
+                        continue; // Try next attempt
+                    }
+
+                    // Solve with WFC
+                    if (wfcSolver != null && wfcSolver.solve(localContext, localPositions)) {
+                        BlockType result = localContext.getBlockAt(center);
+                        if (result != null) {
+                            return result;
+                        }
+                    }
+                } catch (Exception e) {
+                    // Silent retry on individual attempt failure
+                    continue;
+                }
+            }
+
+            // All attempts failed
+            return null;
+
+        } catch (Exception e) {
+            System.err.println("Solve position failed: " + e.getMessage());
+            return null;
         }
     }
 
     private float getIslandValue(int x, int z) {
-        // Multi-scale island generation
+        try {
+            if (islandNoise == null || islandShapeNoise == null || archipelagoNoise == null) {
+                // Fallback to simple calculation
+                return (float) ((Math.sin(x * 0.01f) * Math.cos(z * 0.01f) + 1) * 0.5f);
+            }
 
-        // 1. Archipelago pattern (large scale)
-        float archipelago = archipelagoNoise.noise(x * 0.0008f, z * 0.0008f);
+            // Multi-scale island generation
+            float archipelago = archipelagoNoise.noise(x * 0.0008f, z * 0.0008f);
+            float islandCenters = islandNoise.noise(x * ISLAND_FREQUENCY, z * ISLAND_FREQUENCY);
+            float shapeDetail = islandShapeNoise.noise(x * 0.01f, z * 0.01f) * 0.3f;
 
-        // 2. Individual island centers (medium scale)
-        float islandCenters = islandNoise.noise(x * ISLAND_FREQUENCY, z * ISLAND_FREQUENCY);
+            // Combine scales with island bias
+            float combined = (archipelago + 1) * 0.5f;
+            combined += (islandCenters + 1) * 0.3f;
+            combined += shapeDetail;
+            combined *= ISLAND_SIZE_VARIANCE;
 
-        // 3. Island shape variation (small scale)
-        float shapeDetail = islandShapeNoise.noise(x * 0.01f, z * 0.01f) * 0.3f;
+            return Math.min(1.0f, Math.max(0.0f, combined));
 
-        // Combine scales with island bias
-        float combined = (archipelago + 1) * 0.5f; // Normalize [-1,1] to [0,1]
-        combined += (islandCenters + 1) * 0.3f; // Add island centers
-        combined += shapeDetail; // Add shape variation
-
-        // Apply island size variance
-        combined *= ISLAND_SIZE_VARIANCE;
-
-        return Math.min(1.0f, Math.max(0.0f, combined));
+        } catch (Exception e) {
+            System.err.println("Island value calculation failed: " + e.getMessage());
+            // Simple fallback
+            return 0.3f; // Default to mostly ocean
+        }
     }
 
-    private BlockType solveForPosition(int x, int y, int z, boolean isIsland) {
-        // Create a mini WFC problem for this position and its neighbors
-        Set<Position> localPositions = new HashSet<>();
-        Position center = new Position(x, y, z);
+    // Traditional generation fallback
+    private BlockType getTraditionalBlockAt(int worldX, int worldY, int worldZ) {
+        try {
+            float islandValue = getIslandValue(worldX, worldZ);
+            boolean isIsland = islandValue > OCEAN_BIAS;
 
-        // Add local neighborhood for context
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                for (int dz = -1; dz <= 1; dz++) {
-                    localPositions.add(new Position(x + dx, y + dy, z + dz));
-                }
-            }
-        }
-
-        // Create local context
-        LocalWorldContext localContext = new LocalWorldContext(x, y, z, isIsland);
-
-        // Solve with WFC
-        if (wfcSolver.solve(localContext, localPositions)) {
-            return localContext.getBlockAt(center);
-        } else {
-            // Fallback to height-based generation
-            return getHeightBasedBlock(x, y, z, isIsland);
+            return getHeightBasedBlock(worldX, worldY, worldZ, isIsland);
+        } catch (Exception e) {
+            System.err.println("Traditional generation failed: " + e.getMessage());
+            return getBasicBlockAt(worldX, worldY, worldZ);
         }
     }
 
     private BlockType getHeightBasedBlock(int x, int y, int z, boolean isIsland) {
-        if (!isIsland) {
-            return y <= 32 ? BlockType.WATER : BlockType.AIR;
-        }
+        try {
+            if (!isIsland) {
+                return y <= 32 ? BlockType.WATER : BlockType.AIR;
+            }
 
-        float height = generateIslandHeight(x, z);
+            float height = generateIslandHeight(x, z);
 
-        if (y > height) return BlockType.AIR;
-        if (y <= 32 && y > height) return BlockType.WATER;
+            if (y > height) return BlockType.AIR;
+            if (y <= 32 && y > height) return BlockType.WATER;
 
-        float surfaceDepth = height - y;
+            float surfaceDepth = height - y;
 
-        if (surfaceDepth < 1) {
-            return height > 33 ? BlockType.GRASS : BlockType.SAND;
-        } else if (surfaceDepth < 3) {
-            return height > 33 ? BlockType.DIRT : BlockType.SAND;
-        } else {
-            return BlockType.STONE;
+            if (surfaceDepth < 1) {
+                return height > 33 ? BlockType.GRASS : BlockType.SAND;
+            } else if (surfaceDepth < 3) {
+                return height > 33 ? BlockType.DIRT : BlockType.SAND;
+            } else {
+                return BlockType.STONE;
+            }
+        } catch (Exception e) {
+            return getBasicBlockAt(x, y, z);
         }
     }
 
     private float generateIslandHeight(int x, int z) {
-        float islandValue = getIslandValue(x, z);
+        try {
+            float islandValue = getIslandValue(x, z);
 
-        // Islands rise above sea level based on their "strength"
-        float baseHeight = 32; // Sea level
-        float islandHeight = (islandValue - OCEAN_BIAS) / (1.0f - OCEAN_BIAS);
-        islandHeight = Math.max(0, islandHeight);
+            float baseHeight = 32;
+            float islandHeight = (islandValue - OCEAN_BIAS) / (1.0f - OCEAN_BIAS);
+            islandHeight = Math.max(0, islandHeight);
+            islandHeight = (float) Math.pow(islandHeight, 0.7f);
 
-        // Apply height curve for more natural islands
-        islandHeight = (float) Math.pow(islandHeight, 0.7f);
+            return baseHeight + islandHeight * 25;
+        } catch (Exception e) {
+            return 32 + (float)(Math.sin(x * 0.01) * Math.cos(z * 0.01)) * 10;
+        }
+    }
 
-        return baseHeight + islandHeight * 25; // Max island height ~57
+    // Ultimate fallback - basic block generation
+    private BlockType getBasicBlockAt(int x, int y, int z) {
+        if (y <= 30) return BlockType.STONE;
+        if (y <= 32) return BlockType.WATER;
+        if (y <= 35) return BlockType.SAND;
+        return BlockType.AIR;
+    }
+
+    // Getter for debugging
+    public boolean isWFCEnabled() {
+        return wfcEnabled;
+    }
+
+    public int getConstraintFailureCount() {
+        return constraintFailureCount;
     }
 }
-

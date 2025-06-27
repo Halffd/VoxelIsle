@@ -54,11 +54,12 @@ public class Main extends ApplicationAdapter {
         world = new IslandWorld(blockModels);
 
         // Initialize player
-        player = new Player(WORLD_SIZE / 2f, WORLD_HEIGHT + 10f, WORLD_SIZE / 2f);
+        player = new Player(WORLD_SIZE / 2f, 40f, WORLD_SIZE / 2f);
 
         // Create UI renderer
         uiRenderer = new UIRenderer();
 
+        System.out.println("Input processor set. Cursor caught: " + Gdx.input.isCursorCatched());
         System.out.println("Voxel world initialized. World size: " + WORLD_SIZE + "x" + WORLD_HEIGHT + "x" + WORLD_SIZE);
     }
 
@@ -148,102 +149,6 @@ public class Main extends ApplicationAdapter {
 
         // Render UI
         uiRenderer.render(player);
-    }
-
-    // Input processor for player's camera
-    private class PlayerInputProcessor implements InputProcessor {
-        private PerspectiveCamera camera;
-
-        public PlayerInputProcessor(PerspectiveCamera camera) {
-            this.camera = camera;
-        }
-
-        private float getMouseSensitivity() {
-            return GameSettings.getInstance().getMouseSensitivity();
-        }
-
-        @Override
-        public boolean keyDown(int keycode) {
-            if (keycode == Input.Keys.ESCAPE) {
-                if (Gdx.input.isCursorCatched()) {
-                    Gdx.input.setCursorCatched(false);
-                } else {
-                    Gdx.app.exit();
-                }
-            }
-
-            if (keycode == Input.Keys.TAB || keycode == Input.Keys.ENTER) {
-                boolean newCatchState = !Gdx.input.isCursorCatched();
-                Gdx.input.setCursorCatched(newCatchState);
-
-                // Center cursor when grabbing
-                if (newCatchState) {
-                    Gdx.input.setCursorPosition(
-                        Gdx.graphics.getWidth() / 2,
-                        Gdx.graphics.getHeight() / 2);
-                }
-            }
-
-            return false;
-        }
-
-        @Override
-        public boolean keyUp(int keycode) {
-            return false;
-        }
-
-        @Override
-        public boolean keyTyped(char character) {
-            return false;
-        }
-
-        @Override
-        public boolean touchDown(int screenX, int screenY, int pointer, int button) {
-            return false;
-        }
-
-        @Override
-        public boolean touchUp(int screenX, int screenY, int pointer, int button) {
-            return false;
-        }
-
-        @Override
-        public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
-            return false;
-        }
-
-        @Override
-        public boolean touchDragged(int screenX, int screenY, int pointer) {
-            if (Gdx.input.isCursorCatched()) {
-                float deltaX = -Gdx.input.getDeltaX() * getMouseSensitivity();
-                float deltaY = -Gdx.input.getDeltaY() * getMouseSensitivity();
-
-                // Rotate camera
-                camera.rotate(camera.up, deltaX);
-                camera.rotate(new Vector3(camera.direction).crs(camera.up).nor(), deltaY);
-                camera.update();
-            }
-            return true;
-        }
-
-        @Override
-        public boolean mouseMoved(int screenX, int screenY) {
-            if (Gdx.input.isCursorCatched()) {
-                float deltaX = -Gdx.input.getDeltaX() * getMouseSensitivity();
-                float deltaY = -Gdx.input.getDeltaY() * getMouseSensitivity();
-
-                // Rotate camera
-                camera.rotate(camera.up, deltaX);
-                camera.rotate(new Vector3(camera.direction).crs(camera.up).nor(), deltaY);
-                camera.update();
-            }
-            return true;
-        }
-
-        @Override
-        public boolean scrolled(float amountX, float amountY) {
-            return false;
-        }
     }
 
     @Override
