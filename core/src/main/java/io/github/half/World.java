@@ -15,7 +15,7 @@ public class World {
     private static final int CHUNK_SIZE = 16;
     private static final int WORLD_HEIGHT = 64;
 
-    private ChunkManager chunkManager;
+    ChunkManager chunkManager;
     private WorldGenerator worldGenerator;
     private Model[] blockModels;
 
@@ -58,8 +58,10 @@ public class World {
             }
         }
     }
-    // No World.java, adiciona esses métodos:
-
+    public float getHeightAt(int x, int z) {
+        // Use your world generator to get height
+        return worldGenerator.generateHeight(x, z); // You'll need to make this method public
+    }
     public BlockType getBlockAt(int x, int y, int z) {
         // Calculate which chunk this block belongs to
         int chunkX = Math.floorDiv(x, 16); // CHUNK_SIZE = 16

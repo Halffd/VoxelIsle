@@ -83,7 +83,7 @@ public class WorldGenerator {
         }
     }
 
-    private float generateHeight(int x, int z) {
+    public float generateHeight(int x, int z) {
         // Improved terrain generation with better scale separation and biome influence
         float scale1 = 0.005f;  // Continental features
         float scale2 = 0.02f;   // Medium features (hills)

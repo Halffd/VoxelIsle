@@ -9,8 +9,8 @@ import com.badlogic.gdx.utils.Array;
 
 public class Chunk {
     public final int chunkX, chunkZ;
-    private static final int CHUNK_SIZE = 16;
-    private static final int WORLD_HEIGHT = 64;
+    protected static final int CHUNK_SIZE = 16;
+    protected static final int WORLD_HEIGHT = 64;
 
     private BlockType[][][] blocks;
     private Array<ModelInstance> instances;
@@ -18,7 +18,7 @@ public class Chunk {
     private WorldGenerator worldGenerator;
     private Model[] blockModels;
     private BoundingBox boundingBox;
-    private boolean generated = false;
+    protected boolean generated = false;
     private boolean needsRebuild = false;
     private boolean meshReady = false; // NOVO: Flag para saber se mesh está pronto
 

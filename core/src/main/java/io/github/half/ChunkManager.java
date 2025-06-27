@@ -21,7 +21,7 @@ public class ChunkManager {
     private Array<ChunkOperation> completedOperations;
     private Vector3 lastPlayerChunk;
     private WorldGenerator worldGenerator;
-    private Model[] blockModels;
+    protected Model[] blockModels;
     private ExecutorService threadPool;
     private AtomicBoolean isRunning;
 

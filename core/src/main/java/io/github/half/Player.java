@@ -102,17 +102,40 @@ public class Player {
     }
 
     private void handleInput(float deltaTime) {
+        // Debug: Print when any key is pressed
+        if (Gdx.input.isKeyJustPressed(Input.Keys.ANY_KEY)) {
+            System.out.println("Key pressed detected!");
+        }
+
+        // Debug: Print mouse movement
+        if (Gdx.input.getDeltaX() != 0 || Gdx.input.getDeltaY() != 0) {
+            System.out.println("Mouse delta: " + Gdx.input.getDeltaX() + ", " + Gdx.input.getDeltaY());
+        }
+
+        // Debug: Print specific key presses
+        if (Gdx.input.isKeyPressed(Input.Keys.W)) {
+            System.out.println("W key is being pressed");
+        }
+
         // Toggle view mode
         if (Gdx.input.isKeyJustPressed(Input.Keys.V)) {
+            System.out.println("V pressed - toggling view mode");
             toggleViewMode();
         }
+
         if (Gdx.input.isCursorCatched()) {
             float sensitivity = GameSettings.getInstance().getMouseSensitivity();
             float deltaX = -Gdx.input.getDeltaX() * sensitivity;
             float deltaY = -Gdx.input.getDeltaY() * sensitivity;
 
+            if (deltaX != 0 || deltaY != 0) {
+                System.out.println("Rotating camera: deltaX=" + deltaX + ", deltaY=" + deltaY);
+            }
+
             camera.rotate(camera.up, deltaX);
             camera.rotate(new Vector3(camera.direction).crs(camera.up).nor(), deltaY);
+        } else {
+            System.out.println("Cursor not caught - mouse input disabled");
         }
         // Toggle gravity mode
         if (Gdx.input.isKeyJustPressed(Input.Keys.G)) {

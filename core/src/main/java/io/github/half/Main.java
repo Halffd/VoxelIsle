@@ -51,43 +51,13 @@ public class Main extends ApplicationAdapter {
         createBlockModels();
 
         // Initialize world
-        world = new World(blockModels);
+        world = new IslandWorld(blockModels);
 
         // Initialize player
         player = new Player(WORLD_SIZE / 2f, WORLD_HEIGHT + 10f, WORLD_SIZE / 2f);
 
         // Create UI renderer
         uiRenderer = new UIRenderer();
-
-        // Set input processor to player's camera
-        Gdx.input.setInputProcessor(new InputProcessor() {
-            @Override
-            public boolean keyDown(int keycode) {
-                if (keycode == Input.Keys.ESCAPE) {
-                    Gdx.app.exit();
-                }
-                if (keycode == Input.Keys.TAB) {
-                    Gdx.input.setCursorCatched(!Gdx.input.isCursorCatched());
-                }
-                return false;
-            }
-
-            // Implementa os outros métodos como false
-            @Override public boolean keyUp(int keycode) { return false; }
-            @Override public boolean keyTyped(char character) { return false; }
-            @Override public boolean touchDown(int screenX, int screenY, int pointer, int button) { return false; }
-            @Override public boolean touchUp(int screenX, int screenY, int pointer, int button) { return false; }
-
-            @Override
-            public boolean touchCancelled(int i, int i1, int i2, int i3) {
-                return false;
-            }
-
-            @Override public boolean touchDragged(int screenX, int screenY, int pointer) { return false; }
-            @Override public boolean mouseMoved(int screenX, int screenY) { return false; }
-            @Override public boolean scrolled(float amountX, float amountY) { return false; }
-        });
-        Gdx.input.setCursorCatched(true);
 
         System.out.println("Voxel world initialized. World size: " + WORLD_SIZE + "x" + WORLD_HEIGHT + "x" + WORLD_SIZE);
     }
