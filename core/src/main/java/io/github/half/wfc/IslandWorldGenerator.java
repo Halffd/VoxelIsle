@@ -213,7 +213,9 @@ public class IslandWorldGenerator extends WorldGenerator {
 
             return getHeightBasedBlock(worldX, worldY, worldZ, isIsland);
         } catch (Exception e) {
-            System.err.println("Traditional generation failed: " + e.getMessage());
+            if (GameSettings.getInstance().isWfcVerboseLoggingEnabled()) {
+                System.err.println("Traditional generation failed: " + e.getMessage());
+            }
             return getBasicBlockAt(worldX, worldY, worldZ);
         }
     }

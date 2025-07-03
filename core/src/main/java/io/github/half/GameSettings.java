@@ -19,6 +19,7 @@ public class GameSettings {
     // Settings values
     private float mouseSensitivity;
     private boolean playerGravityEnabled;
+    private boolean wfcVerboseLoggingEnabled;
 
     // Preferences object
     private Preferences prefs;
@@ -64,5 +65,17 @@ public class GameSettings {
 
     public void togglePlayerGravity() {
         playerGravityEnabled = !playerGravityEnabled;
+    }
+
+    public boolean isWfcVerboseLoggingEnabled() {
+        return wfcVerboseLoggingEnabled;
+    }
+
+    public void setWfcVerboseLoggingEnabled(boolean wfcVerboseLoggingEnabled) {
+        this.wfcVerboseLoggingEnabled = wfcVerboseLoggingEnabled;
+    }
+
+    public void toggleWfcVerboseLogging() {
+        this.wfcVerboseLoggingEnabled = !this.wfcVerboseLoggingEnabled;
     }
 }

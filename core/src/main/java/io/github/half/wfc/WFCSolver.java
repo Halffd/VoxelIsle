@@ -1,6 +1,7 @@
 package io.github.half.wfc;
 
 import io.github.half.BlockType;
+import io.github.half.GameSettings;
 import java.util.*;
 
 public class WFCSolver {
@@ -60,7 +61,9 @@ public class WFCSolver {
         for (Constraint constraint : constraints) {
             Set<BlockType> allowed = constraint.getAllowedTypes(cell.getPosition(), context);
             if (!cell.constrain(allowed)) {
-                System.err.println("Initial constraint contradiction at " + cell.getPosition());
+                if (GameSettings.getInstance().isWfcVerboseLoggingEnabled()) {
+                    System.err.println("Initial constraint contradiction at " + cell.getPosition());
+                }
             }
         }
     }
