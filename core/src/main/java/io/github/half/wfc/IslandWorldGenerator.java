@@ -155,9 +155,6 @@ public class IslandWorldGenerator extends WorldGenerator {
 
                     // Create local context with null safety
                     LocalWorldContext localContext = new LocalWorldContext(x, y, z, isIsland);
-                    if (localContext == null) {
-                        continue; // Try next attempt
-                    }
 
                     // Solve with WFC
                     if (wfcSolver != null && wfcSolver.solve(localContext, localPositions)) {
