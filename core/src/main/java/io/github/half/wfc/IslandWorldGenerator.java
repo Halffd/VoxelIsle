@@ -14,6 +14,7 @@ public class IslandWorldGenerator extends WorldGenerator {
     private static final int MAX_CONSTRAINT_FAILURES = 100;
 
     private WFCSolver wfcSolver;
+    private Set<Constraint> worldConstraints;
     private PerlinNoise islandNoise;
     private PerlinNoise islandShapeNoise;
     private PerlinNoise archipelagoNoise;
@@ -50,26 +51,27 @@ public class IslandWorldGenerator extends WorldGenerator {
 
     private void setupWFC() {
         try {
-            Set<Constraint> worldConstraints = new HashSet<>();
+            this.worldConstraints = new HashSet<>();
 
             // SIMPLIFIED CONSTRAINTS - less conflicts
 
             // 1. Basic height constraints with overlap zones
-            worldConstraints.add(new HeightConstraint(BlockType.WATER, 0, 40)); // Extended range
-            worldConstraints.add(new HeightConstraint(BlockType.AIR, 25, 64));  // Overlap zone
+            this.worldConstraints.add(new HeightConstraint(BlockType.WATER, 0, 40)); // Extended range
+            this.worldConstraints.add(new HeightConstraint(BlockType.AIR, 25, 64));  // Overlap zone
 
             // 2. Simple adjacency rules
-            worldConstraints.add(new AdjacencyConstraint(BlockType.GRASS, Direction.DOWN,
+            this.worldConstraints.add(new AdjacencyConstraint(BlockType.GRASS, Direction.DOWN,
                 BlockType.DIRT, BlockType.STONE, BlockType.SAND)); // More options
 
             // 3. Simplified proximity - more lenient
-            worldConstraints.add(new ProximityConstraint(BlockType.SAND, BlockType.WATER, 5)); // Larger range
+            this.worldConstraints.add(new ProximityConstraint(BlockType.SAND, BlockType.WATER, 5)); // Larger range
 
-            // 4. Basic ore distribution - only if we have stone
-            worldConstraints.add(new GeologicalConstraint(BlockType.IRON, BlockType.STONE, 0.3f)); // Lower threshold
+            this.worldConstraints.add(new BiomeConstraint(10)); // Add BiomeConstraint
+            this.worldConstraints.add(new StructureConstraint(5)); // Add StructureConstraint
+            this.worldConstraints.add(new StructureConstraint(5)); // Add StructureConstraint
 
-            wfcSolver = new WFCSolver(worldConstraints, System.currentTimeMillis());
-            System.out.println("WFC setup complete with " + worldConstraints.size() + " constraints");
+            wfcSolver = new WFCSolver(this.worldConstraints, System.currentTimeMillis());
+            System.out.println("WFC setup complete with " + this.worldConstraints.size() + " constraints");
 
         } catch (Exception e) {
             System.err.println("WFC setup failed: " + e.getMessage());
@@ -156,8 +158,11 @@ public class IslandWorldGenerator extends WorldGenerator {
                     // Create local context with null safety
                     LocalWorldContext localContext = new LocalWorldContext(x, y, z, isIsland);
 
+                    // Create a new solver for each attempt to ensure different random seeds
+                    WFCSolver attemptSolver = new WFCSolver(this.worldConstraints, System.currentTimeMillis() + attempt);
+
                     // Solve with WFC
-                    if (wfcSolver != null && wfcSolver.solve(localContext, localPositions)) {
+                    if (attemptSolver.solve(localContext, localPositions)) {
                         BlockType result = localContext.getBlockAt(center);
                         if (result != null) {
                             return result;
@@ -214,7 +219,7 @@ public class IslandWorldGenerator extends WorldGenerator {
             return getHeightBasedBlock(worldX, worldY, worldZ, isIsland);
         } catch (Exception e) {
             if (GameSettings.getInstance().isWfcVerboseLoggingEnabled()) {
-                System.err.println("Traditional generation failed: " + e.getMessage());
+                System.out.println("WFC setup complete with " + this.worldConstraints.size() + " constraints");
             }
             return getBasicBlockAt(worldX, worldY, worldZ);
         }

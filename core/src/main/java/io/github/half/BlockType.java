@@ -13,7 +13,14 @@ public enum BlockType {
     DIAMOND(true, 5.0f),
     CRYSTAL(true, 4.5f),
     OIL(false, 0f),
-    WOOD(true, 1.5f);
+    WOOD(true, 1.5f),
+    GRAVEL(true, 0.6f),
+    CLAY(true, 0.7f),
+    LEAVES(true, 0.2f),
+    SANDSTONE(true, 0.8f),
+    CACTUS(true, 0.4f),
+    COAL_ORE(true, 3.0f),
+    IRON_ORE(true, 5.0f);
 
     private final boolean solid;
     private final float hardness;

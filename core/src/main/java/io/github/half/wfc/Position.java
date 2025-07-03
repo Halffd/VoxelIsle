@@ -16,6 +16,14 @@ public class Position {
         return new Position(x + dir.dx, y + dir.dy, z + dir.dz);
     }
 
+    public Position up() {
+        return new Position(x, y + 1, z);
+    }
+
+    public Position down() {
+        return new Position(x, y - 1, z);
+    }
+
     @Override
     public boolean equals(Object obj) {
         if (!(obj instanceof Position)) return false;
