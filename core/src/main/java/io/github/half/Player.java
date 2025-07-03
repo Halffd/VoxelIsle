@@ -111,7 +111,7 @@ public class Player {
         if (Gdx.input.getDeltaX() != 0 || Gdx.input.getDeltaY() != 0) {
             System.out.println("Mouse delta: " + Gdx.input.getDeltaX() + ", " + Gdx.input.getDeltaY());
         }
-<
+
         // Debug: Print specific key presses
         if (Gdx.input.isKeyPressed(Input.Keys.W)) {
             System.out.println("W key is being pressed");
