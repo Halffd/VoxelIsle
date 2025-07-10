@@ -31,30 +31,59 @@ public class World {
     }
 
     public void render(ModelBatch batch, Camera camera, Environment environment) {
+        // Get a snapshot of loaded chunks to avoid concurrent modification
         ObjectMap<String, Chunk> loadedChunks = chunkManager.getLoadedChunks();
+        if (loadedChunks == null || loadedChunks.size == 0) {
+            return;
+        }
 
+        // Batch instances by material for better performance
+        ObjectMap<String, Array<ModelInstance>> batches = new ObjectMap<>();
+        
+        // First pass: collect all instances and batch them by material
         for (Chunk chunk : loadedChunks.values()) {
             try {
-                if (chunk != null && chunk.isVisible(camera) && chunk.isReady()) {
-                    Array<ModelInstance> instances = chunk.getInstances();
+                if (chunk == null || !chunk.isVisible(camera) || !chunk.isReady()) {
+                    continue;
+                }
 
-                    if (instances != null && instances.size > 0) {
-                        // Validação extra para prevenir arrays corrompidos
-                        boolean hasValidInstances = true;
-                        for (ModelInstance instance : instances) {
-                            if (instance == null) {
-                                hasValidInstances = false;
-                                break;
-                            }
-                        }
+                Array<ModelInstance> chunkInstances = chunk.getInstances();
+                if (chunkInstances == null || chunkInstances.size == 0) {
+                    continue;
+                }
 
-                        if (hasValidInstances) {
-                            batch.render(instances, environment);
-                        }
+                for (ModelInstance instance : chunkInstances) {
+                    if (instance == null) continue;
+                    
+                    // Get material name for batching
+                    String materialName = "default";
+                    if (instance.materials != null && instance.materials.size > 0) {
+                        materialName = instance.materials.first().id;
                     }
+                    
+                    // Get or create batch for this material
+                    Array<ModelInstance> batchList = batches.get(materialName);
+                    if (batchList == null) {
+                        batchList = new Array<>();
+                        batches.put(materialName, batchList);
+                    }
+                    batchList.add(instance);
                 }
             } catch (Exception e) {
-                System.out.println("Skipping corrupted chunk: " + e.getMessage());
+                System.err.println("Error processing chunk: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+
+        // Render each batch
+        for (Array<ModelInstance> batchList : batches.values()) {
+            if (batchList != null && batchList.size > 0) {
+                try {
+                    batch.render(batchList, environment);
+                } catch (Exception e) {
+                    System.err.println("Error rendering batch: " + e.getMessage());
+                    e.printStackTrace();
+                }
             }
         }
     }

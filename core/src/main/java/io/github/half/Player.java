@@ -102,30 +102,9 @@ public class Player {
     }
 
     private void handleInput(float deltaTime) {
-        // Debug: Print when any key is pressed
-        if (Gdx.input.isKeyJustPressed(Input.Keys.ANY_KEY)) {
-            System.out.println("Key pressed detected!");
-        }
-
-        // Debug: Print mouse movement
-        if (Gdx.input.getDeltaX() != 0 || Gdx.input.getDeltaY() != 0) {
-            System.out.println("Mouse delta: " + Gdx.input.getDeltaX() + ", " + Gdx.input.getDeltaY());
-        }
-
-        // Debug: Print specific key presses
-        if (Gdx.input.isKeyPressed(Input.Keys.W)) {
-            System.out.println("W key is being pressed");
-        }
-
         // Toggle view mode
         if (Gdx.input.isKeyJustPressed(Input.Keys.V)) {
-            System.out.println("V pressed - toggling view mode");
             toggleViewMode();
-        }
-        // Toggle gravity mode
-        if (Gdx.input.isKeyJustPressed(Input.Keys.G)) {
-            GameSettings.getInstance().togglePlayerGravity();
-            GameSettings.getInstance().saveSettings();
         }
 
         // Jumping

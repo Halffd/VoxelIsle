@@ -118,10 +118,12 @@ public class ChunkManager {
     }
 
     public ObjectMap<String, Chunk> getLoadedChunks() {
-        // Return a safe copy of loaded chunks to prevent concurrent modification
+        // Return a defensive copy of loaded chunks to prevent concurrent modification
+        ObjectMap<String, Chunk> copy = new ObjectMap<>();
         synchronized (loadedChunks) {
-            return loadedChunks;
+            copy.putAll(loadedChunks);
         }
+        return copy;
     }
 
     public void queueRebuildMesh(int chunkX, int chunkZ) {

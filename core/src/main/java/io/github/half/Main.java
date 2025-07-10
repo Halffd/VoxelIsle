@@ -31,16 +31,16 @@ public class Main extends ApplicationAdapter {
     private Player player;
     private World world;
     private UIRenderer uiRenderer;
-
     private Model[] blockModels;
+    private VoxelCameraController cameraController;
 
     @Override
     public void create() {
         // Initialize game settings
         GameSettings.getInstance();
 
-        // Initialize rendering
-        modelBatch = new ModelBatch();
+        // Initialize rendering with our custom sorter
+        modelBatch = new ModelBatch(new VoxelRenderableSorter());
 
         // Set up environment lighting
         environment = new Environment();
@@ -58,6 +58,9 @@ public class Main extends ApplicationAdapter {
 
         // Create UI renderer
         uiRenderer = new UIRenderer();
+
+        cameraController = new VoxelCameraController(player.getCamera());
+        Gdx.input.setInputProcessor(cameraController);
 
         System.out.println("Input processor set. Cursor caught: " + Gdx.input.isCursorCatched());
         System.out.println("Voxel world initialized. World size: " + WORLD_SIZE + "x" + WORLD_HEIGHT + "x" + WORLD_SIZE);
