@@ -44,7 +44,12 @@ public class Main extends ApplicationAdapter {
 
         // Set up environment lighting
         environment = new Environment();
-        environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.6f, 0.6f, 0.6f, 1f));
+        environment.set(new ColorAttribute(ColorAttribute.AmbientL 
+        
+        
+        
+        
+        ight, 0.6f, 0.6f, 0.6f, 1f));
         environment.add(new DirectionalLight().set(0.8f, 0.8f, 0.8f, -1f, -0.8f, -0.2f));
 
         // Create block models
@@ -53,8 +58,15 @@ public class Main extends ApplicationAdapter {
         // Initialize world
         world = new IslandWorld(blockModels);
 
-        // Initialize player
-        player = new Player(WORLD_SIZE / 2f, 40f, WORLD_SIZE / 2f);
+        // Find a suitable spawn point near the center
+        int centerX = WORLD_SIZE / 2;
+        int centerZ = WORLD_SIZE / 2;
+        float spawnY = findSpawnHeight(centerX, centerZ);
+        
+        // Initialize player slightly above the found position
+        player = new Player(centerX, spawnY + 2, centerZ);
+        
+        System.out.println("Player spawned at: (" + centerX + ", " + (spawnY + 2) + ", " + centerZ + ")");
 
         // Create UI renderer
         uiRenderer = new UIRenderer();
@@ -159,6 +171,43 @@ public class Main extends ApplicationAdapter {
         player.getCamera().viewportWidth = width;
         player.getCamera().viewportHeight = height;
         player.getCamera().update();
+    }
+
+    private float findSpawnHeight(int centerX, int centerZ) {
+        // Check a small area around the center point
+        int searchRadius = 16; // Search within 16 blocks
+        
+        for (int radius = 0; radius <= searchRadius; radius++) {
+            // Check in expanding squares around the center
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    // Only check the perimeter of the current square
+                    if (Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                    
+                    int x = centerX + dx;
+                    int z = centerZ + dz;
+                    
+                    // Find the highest solid block at this x,z
+                    for (int y = WORLD_HEIGHT - 1; y >= 0; y--) {
+                        BlockType block = world.getBlockAt(x, y, z);
+                        if (block != BlockType.AIR && block != BlockType.WATER) {
+                            // Make sure there's air above this block
+                            if (y < WORLD_HEIGHT - 2 && 
+                                world.getBlockAt(x, y + 1, z) == BlockType.AIR &&
+                                world.getBlockAt(x, y + 2, z) == BlockType.AIR) {
+                                System.out.println("Found spawn at (" + x + ", " + y + ", " + z + ")");
+                                return y + 1; // Return position above the block
+                            }
+                            break; // Move to next x,z position
+                        }
+                    }
+                }
+            }
+        }
+        
+        // If no suitable spot found, fall back to default
+        System.out.println("No suitable spawn found, using default height");
+        return 40f;
     }
 
     @Override

@@ -4,9 +4,11 @@ import java.util.*;
 import io.github.half.wfc.constraints.*;
 
 public class IslandWorldGenerator extends WorldGenerator {
-    private static final float ISLAND_FREQUENCY = 0.003f;
-    private static final float OCEAN_BIAS = 0.7f;
-    private static final float ISLAND_SIZE_VARIANCE = 2.5f;
+    // Island generation parameters
+    private static final float ISLAND_FREQUENCY = 0.002f;  // More spread out islands
+    private static final float OCEAN_BIAS = 0.6f;          // More land
+    private static final float ISLAND_SIZE_VARIANCE = 3.0f; // More varied island sizes
+    private static final float SHORE_FALLOFF = 0.1f;       // Smoother shorelines
 
     // Safety limits
     private static final int MAX_WFC_ATTEMPTS = 5;
@@ -17,6 +19,9 @@ public class IslandWorldGenerator extends WorldGenerator {
     private Set<Constraint> worldConstraints;
     private PerlinNoise islandNoise;
     private PerlinNoise islandShapeNoise;
+    private PerlinNoise archipelagoNoise;
+    private PerlinNoise detailNoise1;
+    private PerlinNoise detailNoise2;
     private PerlinNoise archipelagoNoise;
 
     // Safety counters
@@ -37,12 +42,21 @@ public class IslandWorldGenerator extends WorldGenerator {
 
     private void setupIslandGeneration() {
         try {
-            long seed = System.currentTimeMillis();
+            long seed = 1752126679928L; // Fixed seed for consistency
+            
+            // Multi-octave noise for better terrain detail
             islandNoise = new PerlinNoise(seed * 12289);
             islandShapeNoise = new PerlinNoise(seed * 37171);
             archipelagoNoise = new PerlinNoise(seed * 65537);
+            
+            // Additional noise layers for more detail
+            detailNoise1 = new PerlinNoise(seed * 8191);
+            detailNoise2 = new PerlinNoise(seed * 16381);
+            
+            System.out.println("Island generation initialized with seed: " + seed);
         } catch (Exception e) {
-            System.err.println("Failed to setup island noise, using default seed: " + e.getMessage());
+            System.err.println("Failed to setup island noise: " + e.getMessage());
+            // Fallback to simple noise
             islandNoise = new PerlinNoise(12345);
             islandShapeNoise = new PerlinNoise(67890);
             archipelagoNoise = new PerlinNoise(11111);
@@ -185,28 +199,46 @@ public class IslandWorldGenerator extends WorldGenerator {
 
     private float getIslandValue(int x, int z) {
         try {
-            if (islandNoise == null || islandShapeNoise == null || archipelagoNoise == null) {
-                // Fallback to simple calculation
-                return (float) ((Math.sin(x * 0.01f) * Math.cos(z * 0.01f) + 1) * 0.5f);
-            }
-
-            // Multi-scale island generation
-            float archipelago = archipelagoNoise.noise(x * 0.0008f, z * 0.0008f);
-            float islandCenters = islandNoise.noise(x * ISLAND_FREQUENCY, z * ISLAND_FREQUENCY);
-            float shapeDetail = islandShapeNoise.noise(x * 0.01f, z * 0.01f) * 0.3f;
-
-            // Combine scales with island bias
-            float combined = (archipelago + 1) * 0.5f;
-            combined += (islandCenters + 1) * 0.3f;
-            combined += shapeDetail;
-            combined *= ISLAND_SIZE_VARIANCE;
-
+            // Base island shape (large scale)
+            float baseScale = 0.0005f;
+            float baseNoise = archipelagoNoise.noise(x * baseScale, z * baseScale);
+            
+            // Medium scale features (island groups)
+            float mediumScale = 0.0015f;
+            float mediumNoise = islandNoise.noise(x * mediumScale, z * mediumScale) * 0.7f;
+            
+            // Small scale details (individual islands)
+            float smallScale = 0.01f;
+            float smallNoise = islandShapeNoise.noise(x * smallScale, z * smallScale) * 0.3f;
+            
+            // Combine noise layers
+            float combined = baseNoise * 0.5f + mediumNoise * 0.3f + smallNoise * 0.2f;
+            
+            // Apply falloff from center (circular world)
+            float centerX = 320; // Half of world size
+            float centerZ = 320;
+            float distX = (x - centerX) / centerX;
+            float distZ = (z - centerZ) / centerZ;
+            float distFromCenter = (float) Math.sqrt(distX * distX + distZ * distZ);
+            
+            // Apply circular falloff
+            float falloff = 1.0f - distFromCenter;
+            falloff = Math.max(0, falloff);
+            falloff = (float) Math.pow(falloff, 0.8f);
+            
+            // Combine with noise
+            combined = (combined + 1) * 0.5f; // Convert to 0-1 range
+            combined = combined * falloff * ISLAND_SIZE_VARIANCE;
+            
+            // Add some extra detail noise
+            float detail = detailNoise1.noise(x * 0.02f, z * 0.02f) * 0.1f;
+            combined += detail;
+            
             return Math.min(1.0f, Math.max(0.0f, combined));
-
+            
         } catch (Exception e) {
             System.err.println("Island value calculation failed: " + e.getMessage());
-            // Simple fallback
-            return 0.3f; // Default to mostly ocean
+            return 0.5f; // Default to some land
         }
     }
 
@@ -228,23 +260,44 @@ public class IslandWorldGenerator extends WorldGenerator {
     private BlockType getHeightBasedBlock(int x, int y, int z, boolean isIsland) {
         try {
             if (!isIsland) {
-                return y <= 32 ? BlockType.WATER : BlockType.AIR;
+                // Ocean floor
+                if (y < 20) return BlockType.STONE;
+                if (y <= 32) return BlockType.WATER;
+                return BlockType.AIR;
             }
 
             float height = generateIslandHeight(x, z);
-
-            if (y > height) return BlockType.AIR;
-            if (y <= 32 && y > height) return BlockType.WATER;
-
             float surfaceDepth = height - y;
 
-            if (surfaceDepth < 1) {
-                return height > 33 ? BlockType.GRASS : BlockType.SAND;
-            } else if (surfaceDepth < 3) {
-                return height > 33 ? BlockType.DIRT : BlockType.SAND;
-            } else {
-                return BlockType.STONE;
+            // Above surface
+            if (y > height) {
+                return y <= 32 ? BlockType.WATER : BlockType.AIR;
             }
+
+            // Surface layer
+            if (surfaceDepth < 1) {
+                // Beach or grass
+                if (height <= 33) return BlockType.SAND;
+                
+                // Add some variation to grass
+                float detail = detailNoise1.noise(x * 0.2f, z * 0.2f);
+                if (detail > 0.8f) return BlockType.DIRT;
+                if (detail < 0.2f) return BlockType.SAND;
+                return BlockType.GRASS;
+            }
+            
+            // Underground layers
+            if (surfaceDepth < 4) {
+                return height > 33 ? BlockType.DIRT : BlockType.SAND;
+            }
+            
+            // Add some stone variation
+            float stoneNoise = detailNoise2.noise(x * 0.1f, y * 0.1f, z * 0.1f);
+            if (stoneNoise > 0.7f) return BlockType.STONE;
+            if (stoneNoise < 0.3f) return BlockType.DIRT;
+            
+            // Default to stone
+            return BlockType.STONE;
         } catch (Exception e) {
             return getBasicBlockAt(x, y, z);
         }
@@ -253,15 +306,37 @@ public class IslandWorldGenerator extends WorldGenerator {
     private float generateIslandHeight(int x, int z) {
         try {
             float islandValue = getIslandValue(x, z);
-
-            float baseHeight = 32;
-            float islandHeight = (islandValue - OCEAN_BIAS) / (1.0f - OCEAN_BIAS);
-            islandHeight = Math.max(0, islandHeight);
-            islandHeight = (float) Math.pow(islandHeight, 0.7f);
-
-            return baseHeight + islandHeight * 25;
+            
+            // Base height (ocean floor)
+            float baseHeight = 20f;
+            
+            // Calculate island height based on value
+            float islandHeight;
+            if (islandValue > OCEAN_BIAS) {
+                // Above water - create islands
+                float normalized = (islandValue - OCEAN_BIAS) / (1.0f - OCEAN_BIAS);
+                islandHeight = (float) Math.pow(normalized, 1.5f) * 40f; // Higher islands
+                
+                // Add some noise for more natural look
+                float noise = detailNoise2.noise(x * 0.05f, z * 0.05f) * 5f;
+                islandHeight += noise;
+                
+                // Make some areas higher (mountains)
+                float mountainNoise = islandNoise.noise(x * 0.01f, z * 0.01f);
+                if (mountainNoise > 0.7f) {
+                    islandHeight *= 1.5f + (mountainNoise - 0.7f) * 3f;
+                }
+            } else {
+                // Ocean floor - gently sloping
+                islandHeight = (islandValue / OCEAN_BIAS) * 15f;
+            }
+            
+            // Ensure minimum height
+            return baseHeight + Math.max(0, islandHeight);
+            
         } catch (Exception e) {
-            return 32 + (float)(Math.sin(x * 0.01) * Math.cos(z * 0.01)) * 10;
+            System.err.println("Height generation failed: " + e.getMessage());
+            return 32f; // Fallback height
         }
     }
 
