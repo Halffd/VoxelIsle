@@ -2,16 +2,11 @@ package io.github.half;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
-import com.badlogic.gdx.graphics.Camera;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
-import com.badlogic.gdx.graphics.g2d.TextureRegion;
-import com.badlogic.gdx.graphics.g3d.ModelInstance;
-import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.BoundingBox;
 import com.badlogic.gdx.math.collision.Ray;
-import com.badlogic.gdx.utils.Array;
 
 public class Player {
     // Player physics constants
@@ -34,7 +29,7 @@ public class Player {
     private boolean onGround;
     private boolean isSwimming;
     private boolean isSprinting;
-    private boolean isJumping;
+    // removed isJumping (unused)
     private ViewMode viewMode;
     private float bobTimer;
     private float bobAmplitude;
@@ -56,6 +51,94 @@ public class Player {
     public enum ViewMode {
         FIRST_PERSON,
         THIRD_PERSON
+    }
+
+    private void resolveAxisCollisions(World world, char axis) {
+        // Iterate grid cells overlapping the player's AABB to avoid heavy collider snapshots
+        final float eps = 1e-4f;
+        int minX = MathUtils.floor(boundingBox.min.x - eps);
+        int maxX = MathUtils.floor(boundingBox.max.x + eps);
+        int minY = MathUtils.floor(boundingBox.min.y - eps);
+        int maxY = MathUtils.floor(boundingBox.max.y + eps);
+        int minZ = MathUtils.floor(boundingBox.min.z - eps);
+        int maxZ = MathUtils.floor(boundingBox.max.z + eps);
+
+        if (GameSettings.getInstance().isCollisionLoggingEnabled()) {
+            int approxCells = (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+            Gdx.app.log("Collision", String.format("axis=%c scanCells=%d bb=[(%.3f,%.3f,%.3f)->(%.3f,%.3f,%.3f)] vel=(%.3f,%.3f,%.3f)",
+                    axis, approxCells,
+                    boundingBox.min.x, boundingBox.min.y, boundingBox.min.z,
+                    boundingBox.max.x, boundingBox.max.y, boundingBox.max.z,
+                    velocity.x, velocity.y, velocity.z));
+        }
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    BlockType bt = world.getBlockAt(x, y, z);
+                    if (bt == null || !bt.isSolid()) continue;
+
+                    // Quick AABB intersection against block cell [x,y,z]-[x+1,y+1,z+1]
+                    if (boundingBox.max.x <= x || boundingBox.min.x >= x + 1 ||
+                        boundingBox.max.y <= y || boundingBox.min.y >= y + 1 ||
+                        boundingBox.max.z <= z || boundingBox.min.z >= z + 1) {
+                        continue;
+                    }
+
+                    switch (axis) {
+                        case 'x':
+                            if (GameSettings.getInstance().isCollisionLoggingEnabled()) {
+                                Gdx.app.log("Collision", String.format("hit axis=x cell=[%d,%d,%d] posX=%.3f velX=%.3f",
+                                        x, y, z, position.x, velocity.x));
+                            }
+                            if (velocity.x > 0) {
+                                position.x = x - (PLAYER_WIDTH / 2f);
+                            } else if (velocity.x < 0) {
+                                position.x = (x + 1) + (PLAYER_WIDTH / 2f);
+                            }
+                            velocity.x = 0;
+                            updateBoundingBox();
+                            if (GameSettings.getInstance().isCollisionLoggingEnabled()) {
+                                Gdx.app.log("Collision", String.format("resolve axis=x newPosX=%.3f", position.x));
+                            }
+                            break;
+                        case 'z':
+                            if (GameSettings.getInstance().isCollisionLoggingEnabled()) {
+                                Gdx.app.log("Collision", String.format("hit axis=z cell=[%d,%d,%d] posZ=%.3f velZ=%.3f",
+                                        x, y, z, position.z, velocity.z));
+                            }
+                            if (velocity.z > 0) {
+                                position.z = z - (PLAYER_WIDTH / 2f);
+                            } else if (velocity.z < 0) {
+                                position.z = (z + 1) + (PLAYER_WIDTH / 2f);
+                            }
+                            velocity.z = 0;
+                            updateBoundingBox();
+                            if (GameSettings.getInstance().isCollisionLoggingEnabled()) {
+                                Gdx.app.log("Collision", String.format("resolve axis=z newPosZ=%.3f", position.z));
+                            }
+                            break;
+                        case 'y':
+                            if (GameSettings.getInstance().isCollisionLoggingEnabled()) {
+                                Gdx.app.log("Collision", String.format("hit axis=y cell=[%d,%d,%d] posY=%.3f velY=%.3f",
+                                        x, y, z, position.y, velocity.y));
+                            }
+                            if (velocity.y > 0) {
+                                position.y = y - PLAYER_HEIGHT;
+                            } else if (velocity.y < 0) {
+                                position.y = (y + 1);
+                                onGround = true;
+                            }
+                            velocity.y = 0;
+                            updateBoundingBox();
+                            if (GameSettings.getInstance().isCollisionLoggingEnabled()) {
+                                Gdx.app.log("Collision", String.format("resolve axis=y newPosY=%.3f onGround=%s", position.y, Boolean.toString(onGround)));
+                            }
+                            break;
+                    }
+                }
+            }
+        }
     }
 
     public Player(float startX, float startY, float startZ) {
@@ -80,7 +163,6 @@ public class Player {
         onGround = false;
         isSwimming = false;
         isSprinting = false;
-        isJumping = false;
         breakingProgress = 0f;
         selectedBlockType = BlockType.DIRT; // Default block to place
 
@@ -111,7 +193,6 @@ public class Player {
         if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) {
             if (onGround) {
                 velocity.y = JUMP_VELOCITY;
-                isJumping = true;
             } else if (isSwimming) {
                 velocity.y = JUMP_VELOCITY * 0.5f;
             }
@@ -136,7 +217,6 @@ public class Player {
     }
 
     private void updatePhysics(float deltaTime, World world) {
-        Vector3 oldPosition = new Vector3(position);
 
         // Check if in water
         isSwimming = position.y < WATER_LEVEL;
@@ -152,6 +232,19 @@ public class Player {
         } else {
             // No gravity when disabled
             acceleration.y = 0;
+            // Prevent residual vertical momentum from causing drift
+            velocity.y = 0;
+        }
+
+        // Logging pre-state
+        if (GameSettings.getInstance().isCollisionLoggingEnabled()) {
+            Gdx.app.log("Collision", String.format(
+                    "pre dt=%.3f pos=(%.3f,%.3f,%.3f) vel=(%.3f,%.3f,%.3f) acc=(%.3f,%.3f,%.3f) swim=%s onGround=%s",
+                    deltaTime,
+                    position.x, position.y, position.z,
+                    velocity.x, velocity.y, velocity.z,
+                    acceleration.x, acceleration.y, acceleration.z,
+                    Boolean.toString(isSwimming), Boolean.toString(onGround)));
         }
 
         // Apply acceleration to velocity
@@ -189,14 +282,31 @@ public class Player {
         velocity.x = movement.x;
         velocity.z = movement.z;
 
-        // Apply velocity to position
-        position.add(velocity.x * deltaTime, velocity.y * deltaTime, velocity.z * deltaTime);
-
-        // Update bounding box position
+        // Axis-wise motion to avoid tunneling
+        // X axis
+        position.x += velocity.x * deltaTime;
         updateBoundingBox();
+        resolveAxisCollisions(world, 'x');
 
-        // Collision detection and response
-        handleCollisions(world, oldPosition);
+        // Z axis
+        position.z += velocity.z * deltaTime;
+        updateBoundingBox();
+        resolveAxisCollisions(world, 'z');
+
+        // Y axis (gravity)
+        onGround = false; // reset before vertical resolution
+        position.y += velocity.y * deltaTime;
+        updateBoundingBox();
+        resolveAxisCollisions(world, 'y');
+
+        // Logging post-state
+        if (GameSettings.getInstance().isCollisionLoggingEnabled()) {
+            Gdx.app.log("Collision", String.format(
+                    "post  pos=(%.3f,%.3f,%.3f) vel=(%.3f,%.3f,%.3f) onGround=%s",
+                    position.x, position.y, position.z,
+                    velocity.x, velocity.y, velocity.z,
+                    Boolean.toString(onGround)));
+        }
 
         // Update head bob effect while moving
         if (onGround && (velocity.x != 0 || velocity.z != 0)) {
@@ -205,54 +315,9 @@ public class Player {
         }
     }
 
-    private void handleCollisions(World world, Vector3 oldPosition) {
-        // Determine which blocks the player is colliding with
-        int minX = MathUtils.floor(boundingBox.min.x);
-        int minY = MathUtils.floor(boundingBox.min.y);
-        int minZ = MathUtils.floor(boundingBox.min.z);
-        int maxX = MathUtils.floor(boundingBox.max.x);
-        int maxY = MathUtils.floor(boundingBox.max.y);
-        int maxZ = MathUtils.floor(boundingBox.max.z);
-
-        boolean collisionY = false;
-        onGround = false;
-
-        // Check all potentially colliding blocks
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    BlockType blockType = world.getBlockAt(x, y, z);
-
-                    if (blockType != null && blockType.isSolid()) {
-                        // Create block bounding box
-                        BoundingBox blockBox = new BoundingBox(
-                                new Vector3(x, y, z),
-                                new Vector3(x + 1, y + 1, z + 1));
-
-                        // Check for collision
-                        if (boundingBox.intersects(blockBox)) {
-                            // Handle collision by separating the player from the block
-                            handleBlockCollision(blockBox, oldPosition);
-
-                            // Check if player is standing on ground
-                            if (blockBox.max.y <= position.y + 0.1f && velocity.y <= 0) {
-                                onGround = true;
-                                collisionY = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Reset Y velocity if colliding with ground or ceiling
-        if (collisionY) {
-            velocity.y = 0;
-            isJumping = false;
-        }
-
-        // Update bounding box after collision resolution
-        updateBoundingBox();
+    // Legacy method kept for reference; current collision is axis-resolved
+    private void handleCollisions(World world) {
+        // no-op
     }
 
     private void handleBlockCollision(BoundingBox blockBox, Vector3 oldPosition) {

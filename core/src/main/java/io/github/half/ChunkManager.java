@@ -93,7 +93,7 @@ public class ChunkManager {
             }
         }
     }
-    private String getChunkKey(int chunkX, int chunkZ) {
+    protected String getChunkKey(int chunkX, int chunkZ) {
         return chunkX + "," + chunkZ;
     }
 
@@ -126,12 +126,43 @@ public class ChunkManager {
         return copy;
     }
 
+    // Allow subclasses to insert a generated chunk synchronously
+    protected void putLoadedChunk(Chunk chunk) {
+        synchronized (loadedChunks) {
+            loadedChunks.put(getChunkKey(chunk.chunkX, chunk.chunkZ), chunk);
+        }
+    }
+
+    // Check whether a chunk is already loaded
+    protected boolean containsLoadedChunk(int chunkX, int chunkZ) {
+        synchronized (loadedChunks) {
+            return loadedChunks.containsKey(getChunkKey(chunkX, chunkZ));
+        }
+    }
+
     public void queueRebuildMesh(int chunkX, int chunkZ) {
         String key = getChunkKey(chunkX, chunkZ);
         if (loadedChunks.containsKey(key)) {
             queueChunkOperation(new ChunkOperation(
                     ChunkOperation.Type.REBUILD_MESH,
                     loadedChunks.get(key)));
+        }
+    }
+
+    // Synchronously generate a square of chunks around a world position (in chunk radius)
+    public void prewarmAreaWorld(int centerWorldX, int centerWorldZ, int radiusChunks) {
+        int centerChunkX = (int) Math.floor((float) centerWorldX / CHUNK_SIZE);
+        int centerChunkZ = (int) Math.floor((float) centerWorldZ / CHUNK_SIZE);
+
+        for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx++) {
+            for (int cz = centerChunkZ - radiusChunks; cz <= centerChunkZ + radiusChunks; cz++) {
+                String key = getChunkKey(cx, cz);
+                if (!loadedChunks.containsKey(key)) {
+                    Chunk chunk = new Chunk(cx, cz, worldGenerator, blockModels);
+                    chunk.generate(); // synchronous generation
+                    loadedChunks.put(key, chunk);
+                }
+            }
         }
     }
 
@@ -202,5 +233,10 @@ public class ChunkManager {
             this.type = type;
             this.chunk = chunk;
         }
+    }
+
+    // Expose render distance for spawn prewarm sizing
+    public int getRenderDistance() {
+        return RENDER_DISTANCE;
     }
 }

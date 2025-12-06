@@ -16,6 +16,19 @@ public class IslandWorld extends World {
         System.out.println("Island density: " + IslandConfig.ISLAND_DENSITY);
     }
 
+    // Allow callers to guarantee land near spawn
+    public void setSpawnHint(int x, int z, int radius) {
+        if (wfcChunkManager != null) {
+            wfcChunkManager.setSpawnHint(x, z, radius);
+        }
+    }
+
+    // Prewarm chunks synchronously around a world position (in chunks radius)
+    public void prewarmArea(int centerWorldX, int centerWorldZ, int radiusChunks) {
+        // Uses base ChunkManager synchronous generation for instant availability
+        this.chunkManager.prewarmAreaWorld(centerWorldX, centerWorldZ, radiusChunks);
+    }
+
     @Override
     public void update(Vector3 playerPosition) {
         super.update(playerPosition);

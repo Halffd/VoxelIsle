@@ -11,6 +11,30 @@ public class WFCChunkManager extends ChunkManager {
         this.islandGenerator = new IslandWorldGenerator();
     }
 
+    // Allow callers to bias generation near spawn
+    public void setSpawnHint(int x, int z, int radius) {
+        if (islandGenerator != null) {
+            islandGenerator.setSpawnHint(x, z, radius);
+        }
+    }
+
+    // Synchronously prewarm using WFC chunks so visuals and collisions match
+    @Override
+    public void prewarmAreaWorld(int centerWorldX, int centerWorldZ, int radiusChunks) {
+        int centerChunkX = (int) Math.floor((float) centerWorldX / 16f);
+        int centerChunkZ = (int) Math.floor((float) centerWorldZ / 16f);
+
+        for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx++) {
+            for (int cz = centerChunkZ - radiusChunks; cz <= centerChunkZ + radiusChunks; cz++) {
+                if (!containsLoadedChunk(cx, cz)) {
+                    WFCChunk chunk = new WFCChunk(cx, cz, islandGenerator, blockModels);
+                    chunk.generate();
+                    putLoadedChunk(chunk);
+                }
+            }
+        }
+    }
+
     @Override
     public void queueChunkOperation(ChunkOperation operation) {
         if (operation.type == ChunkOperation.Type.GENERATE) {

@@ -132,16 +132,31 @@ public class WFCSolver {
         // Favor certain blocks at certain heights
         switch (type) {
             case WATER:
-                weight = pos.y <= 32 ? 2.0f : 0.1f;
+                // Strongly prefer water up to sea level, almost never above
+                weight = pos.y <= 32 ? 2.5f : 0.05f;
                 break;
             case GRASS:
-                weight = pos.y > 32 && pos.y < 50 ? 1.5f : 0.5f;
+                // Prefer grass in a band above sea level (surface areas)
+                weight = (pos.y > 32 && pos.y < 55) ? 2.0f : 0.2f;
+                break;
+            case DIRT:
+                // Dirt commonly below/around surface
+                weight = pos.y <= 55 ? 1.6f : 0.3f;
+                break;
+            case SAND:
+                // Sand near beaches and lowlands
+                weight = (pos.y >= 30 && pos.y <= 36) ? 2.0f : 0.4f;
                 break;
             case STONE:
-                weight = pos.y < 40 ? 1.2f : 0.8f;
+                // Prefer stone at lower elevations
+                weight = pos.y < 40 ? 1.8f : 0.6f;
                 break;
             case AIR:
-                weight = pos.y > 35 ? 1.1f : 0.3f;
+                // Reduce AIR dominance; allowed mostly well above surface
+                weight = pos.y > 40 ? 0.6f : 0.1f;
+                break;
+            default:
+                weight = 1.0f;
                 break;
         }
 

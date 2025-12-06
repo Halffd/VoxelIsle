@@ -19,7 +19,6 @@ public class IslandWorldGenerator extends WorldGenerator {
     private Set<Constraint> worldConstraints;
     private PerlinNoise islandNoise;
     private PerlinNoise islandShapeNoise;
-    private PerlinNoise archipelagoNoise;
     private PerlinNoise detailNoise1;
     private PerlinNoise detailNoise2;
     private PerlinNoise archipelagoNoise;
@@ -27,6 +26,11 @@ public class IslandWorldGenerator extends WorldGenerator {
     // Safety counters
     private int constraintFailureCount = 0;
     private boolean wfcEnabled = true;
+
+    // Spawn hint to guarantee land around spawn
+    private volatile boolean spawnHintEnabled = false;
+    private volatile int spawnHintX = 0, spawnHintZ = 0, spawnHintRadius = 0;
+    private volatile boolean spawnHintLogged = false;
 
     public IslandWorldGenerator() {
         super();
@@ -38,6 +42,15 @@ public class IslandWorldGenerator extends WorldGenerator {
             System.err.println("Failed to initialize WFC, falling back to traditional generation: " + e.getMessage());
             wfcEnabled = false;
         }
+    }
+
+    // Allow world to hint the generator to guarantee land around spawn
+    public void setSpawnHint(int x, int z, int radius) {
+        this.spawnHintX = x;
+        this.spawnHintZ = z;
+        this.spawnHintRadius = Math.max(1, radius);
+        this.spawnHintEnabled = true;
+        this.spawnHintLogged = false;
     }
 
     private void setupIslandGeneration() {
@@ -71,7 +84,8 @@ public class IslandWorldGenerator extends WorldGenerator {
 
             // 1. Basic height constraints with overlap zones
             this.worldConstraints.add(new HeightConstraint(BlockType.WATER, 0, 40)); // Extended range
-            this.worldConstraints.add(new HeightConstraint(BlockType.AIR, 25, 64));  // Overlap zone
+            // Replace broad AIR constraint with a surface-aware constraint
+            this.worldConstraints.add(new SurfaceConstraint(12, 32, 2)); // priority, sea level, surface thickness
 
             // 2. Simple adjacency rules
             this.worldConstraints.add(new AdjacencyConstraint(BlockType.GRASS, Direction.DOWN,
@@ -81,7 +95,6 @@ public class IslandWorldGenerator extends WorldGenerator {
             this.worldConstraints.add(new ProximityConstraint(BlockType.SAND, BlockType.WATER, 5)); // Larger range
 
             this.worldConstraints.add(new BiomeConstraint(10)); // Add BiomeConstraint
-            this.worldConstraints.add(new StructureConstraint(5)); // Add StructureConstraint
             this.worldConstraints.add(new StructureConstraint(5)); // Add StructureConstraint
 
             wfcSolver = new WFCSolver(this.worldConstraints, System.currentTimeMillis());
@@ -95,8 +108,8 @@ public class IslandWorldGenerator extends WorldGenerator {
 
     @Override
     public BlockType getBlockAt(int worldX, int worldY, int worldZ) {
-        // Null safety check
-        if (worldX < 0 || worldY < 0 || worldZ < 0 || worldY >= 64) {
+        // Bounds check: only Y; allow negative X/Z coordinates
+        if (worldY < 0 || worldY >= 64) {
             return BlockType.AIR;
         }
 
@@ -199,6 +212,19 @@ public class IslandWorldGenerator extends WorldGenerator {
 
     private float getIslandValue(int x, int z) {
         try {
+            // Force land near spawn if configured
+            if (spawnHintEnabled) {
+                int dx = x - spawnHintX;
+                int dz = z - spawnHintZ;
+                if ((long)dx * dx + (long)dz * dz <= (long)spawnHintRadius * spawnHintRadius) {
+                    if (!spawnHintLogged) {
+                        System.out.println("Spawn hint active: forcing land within radius " + spawnHintRadius + " around (" + spawnHintX + "," + spawnHintZ + ")");
+                        spawnHintLogged = true;
+                    }
+                    // Return a high island value to ensure land generation
+                    return OCEAN_BIAS + 0.25f;
+                }
+            }
             // Base island shape (large scale)
             float baseScale = 0.0005f;
             float baseNoise = archipelagoNoise.noise(x * baseScale, z * baseScale);
@@ -251,7 +277,7 @@ public class IslandWorldGenerator extends WorldGenerator {
             return getHeightBasedBlock(worldX, worldY, worldZ, isIsland);
         } catch (Exception e) {
             if (GameSettings.getInstance().isWfcVerboseLoggingEnabled()) {
-                System.out.println("WFC setup complete with " + this.worldConstraints.size() + " constraints");
+                System.out.println("Traditional generation failed at (" + worldX + "," + worldY + "," + worldZ + "): " + e.getMessage());
             }
             return getBasicBlockAt(worldX, worldY, worldZ);
         }

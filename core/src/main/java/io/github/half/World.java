@@ -8,6 +8,7 @@ import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.Ray;
+import com.badlogic.gdx.math.collision.BoundingBox;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ObjectMap;
 
@@ -201,5 +202,31 @@ public class World {
 
     public void dispose() {
         chunkManager.dispose();
+    }
+
+    // Provide colliders from chunks overlapping a query box
+    public Array<BoundingBox> getPotentialColliders(BoundingBox query) {
+        Array<BoundingBox> result = new Array<>();
+        ObjectMap<String, Chunk> loaded = chunkManager.getLoadedChunks();
+        for (Chunk c : loaded.values()) {
+            try {
+                if (c == null) continue;
+                BoundingBox bb = c.getBoundingBox();
+                if (!bb.intersects(query)) continue;
+                Array<BoundingBox> col = c.getCollidersSnapshot();
+                for (BoundingBox b : col) {
+                    // Optional: further cull by query AABB
+                    if (b.intersects(query)) {
+                        result.add(new BoundingBox(b));
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        return result;
+    }
+
+    // Expose render distance so callers can prewarm full view
+    public int getRenderDistance() {
+        return chunkManager.getRenderDistance();
     }
 }

@@ -15,6 +15,7 @@ public class Chunk {
     private BlockType[][][] blocks;
     private Array<ModelInstance> instances;
     private Array<ModelInstance> renderInstances; // NOVO: Snapshot thread-safe para render
+    private Array<BoundingBox> colliders; // Per-block colliders snapshot
     private WorldGenerator worldGenerator;
     private Model[] blockModels;
     private BoundingBox boundingBox;
@@ -30,6 +31,7 @@ public class Chunk {
         this.blocks = new BlockType[CHUNK_SIZE][WORLD_HEIGHT][CHUNK_SIZE];
         this.instances = new Array<>();
         this.renderInstances = new Array<>(); // NOVO: Inicializa snapshot
+        this.colliders = new Array<>();
 
         // Calculate bounding box
         float minX = chunkX * CHUNK_SIZE;
@@ -62,11 +64,14 @@ public class Chunk {
     public void createMesh() {
         // Cria array local para não interferir no rendering
         Array<ModelInstance> newInstances = new Array<>();
+        Array<BoundingBox> newColliders = new Array<>();
         int totalBlocks = 0;
         int visibleBlocks = 0;
         int addedInstances = 0;
 
-        System.out.println("Creating mesh for chunk (" + chunkX + ", " + chunkZ + ")");
+        if (GameSettings.getInstance().isWfcVerboseLoggingEnabled()) {
+            System.out.println("Creating mesh for chunk (" + chunkX + ", " + chunkZ + ")");
+        }
 
         for (int x = 0; x < CHUNK_SIZE; x++) {
             for (int y = 0; y < WORLD_HEIGHT; y++) {
@@ -76,6 +81,14 @@ public class Chunk {
                         totalBlocks++;
 
                         if (blockType != null && blockType != BlockType.AIR) {
+                            // Build collider for any solid block (even if not visible)
+                            if (blockType.isSolid()) {
+                                float worldX = chunkX * CHUNK_SIZE + x;
+                                float worldZ = chunkZ * CHUNK_SIZE + z;
+                                newColliders.add(new BoundingBox(
+                                        new Vector3(worldX, y, worldZ),
+                                        new Vector3(worldX + 1, y + 1, worldZ + 1)));
+                            }
                             if (isBlockVisible(x, y, z)) {
                                 visibleBlocks++;
 
@@ -107,11 +120,17 @@ public class Chunk {
             renderInstances.clear();
             renderInstances.addAll(newInstances);
 
+            // Swap colliders snapshot
+            colliders.clear();
+            colliders.addAll(newColliders);
+
             meshReady = true;
         }
 
-        System.out.println("Chunk (" + chunkX + ", " + chunkZ + ") - Total: " + totalBlocks +
-            ", Visible: " + visibleBlocks + ", Instances: " + addedInstances);
+        if (GameSettings.getInstance().isWfcVerboseLoggingEnabled()) {
+            System.out.println("Chunk (" + chunkX + ", " + chunkZ + ") - Total: " + totalBlocks +
+                ", Visible: " + visibleBlocks + ", Instances: " + addedInstances);
+        }
         needsRebuild = false;
     }
 
@@ -154,10 +173,21 @@ public class Chunk {
         }
     }
 
+    // Snapshot of colliders for collision queries
+    public Array<BoundingBox> getCollidersSnapshot() {
+        synchronized (this) {
+            if (!meshReady) {
+                return new Array<>();
+            }
+            return new Array<>(colliders);
+        }
+    }
+
     public void dispose() {
         synchronized (this) {
             instances.clear();
             renderInstances.clear();
+            colliders.clear();
             meshReady = false;
         }
     }
@@ -190,5 +220,10 @@ public class Chunk {
         synchronized (this) {
             return meshReady && renderInstances.size > 0;
         }
+    }
+
+    // Expose chunk bounding box for spatial queries
+    public BoundingBox getBoundingBox() {
+        return new BoundingBox(boundingBox);
     }
 }

@@ -44,12 +44,7 @@ public class Main extends ApplicationAdapter {
 
         // Set up environment lighting
         environment = new Environment();
-        environment.set(new ColorAttribute(ColorAttribute.AmbientL 
-        
-        
-        
-        
-        ight, 0.6f, 0.6f, 0.6f, 1f));
+        environment.set(new ColorAttribute(ColorAttribute.AmbientLight, 0.6f, 0.6f, 0.6f, 1f));
         environment.add(new DirectionalLight().set(0.8f, 0.8f, 0.8f, -1f, -0.8f, -0.2f));
 
         // Create block models
@@ -61,6 +56,18 @@ public class Main extends ApplicationAdapter {
         // Find a suitable spawn point near the center
         int centerX = WORLD_SIZE / 2;
         int centerZ = WORLD_SIZE / 2;
+        // Hint the generator to ensure land around spawn
+        if (world instanceof IslandWorld) {
+            ((IslandWorld) world).setSpawnHint(centerX, centerZ, 48);
+            // Prewarm synchronously. If full prewarm is disabled, use a small radius to avoid long startup stalls.
+            int radius = GameSettings.getInstance().isFullPrewarmEnabled()
+                    ? world.getRenderDistance()
+                    : Math.min(2, world.getRenderDistance());
+            long t0 = System.nanoTime();
+            ((IslandWorld) world).prewarmArea(centerX, centerZ, radius);
+            long t1 = System.nanoTime();
+            Gdx.app.log("Prewarm", "prewarmed radius=" + radius + " in " + ((t1 - t0) / 1_000_000) + " ms");
+        }
         float spawnY = findSpawnHeight(centerX, centerZ);
         
         // Initialize player slightly above the found position
@@ -132,6 +139,9 @@ public class Main extends ApplicationAdapter {
     // Gravity toggle cooldown
     private float gravityToggleCooldown = 0f;
     private static final float GRAVITY_TOGGLE_COOLDOWN_TIME = 0.5f; // Half a second cooldown
+    // Collision logging toggle cooldown
+    private float collisionToggleCooldown = 0f;
+    private static final float COLLISION_TOGGLE_COOLDOWN_TIME = 0.5f;
 
     @Override
     public void render() {
@@ -141,6 +151,9 @@ public class Main extends ApplicationAdapter {
         if (gravityToggleCooldown > 0) {
             gravityToggleCooldown -= deltaTime;
         }
+        if (collisionToggleCooldown > 0) {
+            collisionToggleCooldown -= deltaTime;
+        }
 
         // Check for gravity toggle with cooldown
         if (Gdx.input.isKeyJustPressed(Input.Keys.G) && gravityToggleCooldown <= 0) {
@@ -148,9 +161,18 @@ public class Main extends ApplicationAdapter {
             gravityToggleCooldown = GRAVITY_TOGGLE_COOLDOWN_TIME;
         }
 
-        // Update game logic
-        player.update(deltaTime, world);
+        // Toggle collision logging (F9)
+        if (Gdx.input.isKeyJustPressed(Input.Keys.F9) && collisionToggleCooldown <= 0) {
+            GameSettings.getInstance().toggleCollisionLogging();
+            collisionToggleCooldown = COLLISION_TOGGLE_COOLDOWN_TIME;
+            boolean enabled = GameSettings.getInstance().isCollisionLoggingEnabled();
+            Gdx.app.log("Collision", "collision logging " + (enabled ? "ENABLED" : "DISABLED"));
+            GameSettings.getInstance().saveSettings();
+        }
+
+        // Update game logic (update world first so collisions see loaded chunks)
         world.update(player.getPosition());
+        player.update(deltaTime, world);
 
         // Clear screen
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
@@ -176,8 +198,9 @@ public class Main extends ApplicationAdapter {
     private float findSpawnHeight(int centerX, int centerZ) {
         // Check a small area around the center point
         int searchRadius = 16; // Search within 16 blocks
-        
+        System.out.println("Searching for spawn height at: " + centerX + ", " + centerZ);
         for (int radius = 0; radius <= searchRadius; radius++) {
+            System.out.println("Radius: " + radius);
             // Check in expanding squares around the center
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
